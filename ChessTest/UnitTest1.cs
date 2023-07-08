@@ -7,7 +7,6 @@ namespace ChessTest
     [TestClass]
     public class BitBoardTest
     {
-        private const string Expected = "Hello World!";
         [TestMethod]
         public void Exists()
         {
