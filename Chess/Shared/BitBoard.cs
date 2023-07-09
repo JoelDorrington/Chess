@@ -1,5 +1,11 @@
-﻿namespace Chess.Shared
+﻿using System.Reflection;
+
+namespace Chess.Shared
 {
+    public class IllegalMoveException : Exception
+    {
+        public IllegalMoveException() : base("Illegal Move") { }
+    }
     public class BitBoard
     {
         public ulong board;
@@ -7,16 +13,50 @@
         {
             this.board = board;
         }
+        public BitBoard(BitBoard board)
+        {
+            this.board = board.board;
+        }
 
-        public bool isEqual(BitBoard other)
+        public bool IsEqual(BitBoard other)
         {
             return board == other.board;
         }
-
-        public void unionWith(BitBoard other)
+        public bool IsEqual(ulong other)
         {
-            this.board ^= other.board;
+            return board == other;
         }
+
+        public BitBoard UnionWith(BitBoard other)
+        {
+            return new BitBoard(this.board | other.board);
+        }
+        public BitBoard UnionWith(ulong other)
+        {
+            return new BitBoard(this.board | other);
+        }
+        public BitBoard IntersectionOf(BitBoard other)
+        {
+            return new BitBoard(this.board & other.board);
+        }
+        public BitBoard IntersectionOf(ulong other)
+        {
+            return new BitBoard(this.board & other);
+        }
+
+        public void GenShift(int shift)
+        {
+            this.board = (shift > 0) ? (this.board << shift) : (this.board >> -shift);
+        }
+
+        //public void RotateLeft(int shift)
+        //{
+        //    this.board = (this.board << shift) | (this.board >> -shift);
+        //}
+        //public void RotateRight(int shift)
+        //{
+        //    this.board = (this.board >> shift) | (this.board << -shift);
+        //}
 
     }
 
@@ -32,11 +72,7 @@
             King = 5
         }
 
-        public enum Colour
-        {
-            White = 0,
-            Black = 1
-        }
+        public enum Colour { White, Black }
 
         public Colour colour;
         public Type type;
@@ -48,23 +84,46 @@
             this.type = type;
             this.position = new BitBoard(position);
         }
+        public Piece(Colour colour, Type type, BitBoard position)
+        {
+            this.colour = colour;
+            this.type = type;
+            this.position = new BitBoard(position.board);
+        }
+
+        public Piece Clone()
+        {
+            return new Piece(this.colour, this.type, this.position);
+        }
     }
 
     public class Board
     {
         public Piece[] pieces;
-        public Board(Piece[]? pieces)
+        public Piece.Colour currentTurn;
+        public Board()
         {
-            if (pieces == null)
+            this.pieces = new Piece[32];
+            this.currentTurn = Piece.Colour.White;
+            this.ResetBoard();
+        }
+        public Board(Piece[] pieces, Piece.Colour lastTurn)
+        {
+            this.pieces = new Piece[32];
+            this.currentTurn = lastTurn == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
+            Array.Copy(pieces, this.pieces, 32);
+            for(int i = 0; i <  this.pieces.Length; i++)
             {
-                this.pieces = new Piece[0];
-            } else
-            {
-                this.pieces = pieces;
+                this.pieces[i] = this.pieces[i].Clone();
             }
         }
 
-        public void resetBoard()
+        public const ulong a1h8Diagonal = 0x8040201008040201;
+        public const ulong a8h1Diagonal = 0x0102040810204080;
+        public const ulong a1File = 0x0101010101010101;
+        public const ulong firstRank = 0x00000000000000FF;
+
+        public void ResetBoard()
         {
             this.pieces = new Piece[32];
             this.pieces[0] = new Piece(Piece.Colour.White, Piece.Type.Rook, 1);
@@ -101,24 +160,127 @@
             this.pieces[31] = new Piece(Piece.Colour.Black, Piece.Type.Rook, 0x8000000000000000);
         }
 
-        public Piece? getPieceAtSquare(BitBoard squareSingleBitset)
+        public Piece? GetPieceAtSquare(BitBoard squareSingleBitset)
         {
             for (int i = 0; i < this.pieces.Length; i++){
-                if (this.pieces[i] != null && this.pieces[i].position.isEqual(squareSingleBitset)){
+                if (this.pieces[i] != null && this.pieces[i].position.IsEqual(squareSingleBitset)){
+                    return this.pieces[i];
+                }
+            }
+            return null;
+        }
+        public Piece? GetPieceAtSquare(ulong squareSingleBitset)
+        {
+            for (int i = 0; i < this.pieces.Length; i++)
+            {
+                if (this.pieces[i] != null && this.pieces[i].position.IsEqual(squareSingleBitset))
+                {
                     return this.pieces[i];
                 }
             }
             return null;
         }
 
-        public BitBoard getOccupiedSquares()
+        public BitBoard GetOccupiedSquares()
         {
-            BitBoard occupiedSquares = new BitBoard(0);
-            for(int i = 0; i < this.pieces.Length; i++)
+            BitBoard occupiedSquares = new(0);
+            for (int i = 0; i < this.pieces.Length; i++)
             {
-                occupiedSquares.unionWith(this.pieces[i].position);
+                occupiedSquares = occupiedSquares.UnionWith(this.pieces[i].position);
             }
             return occupiedSquares;
+        }
+
+        public BitBoard GetOccupiedSquares(Piece.Colour colour)
+        {
+            BitBoard occupiedSquares = new(0);
+            for (int i = 0; i < this.pieces.Length; i++)
+            {
+                if (this.pieces[i].colour == colour)
+                {
+                    occupiedSquares = occupiedSquares.UnionWith(this.pieces[i].position);
+                }
+            }
+            return occupiedSquares;
+        }
+
+        public List<Move> GetLegalMovesForPiece(Piece piece)
+        {
+            List<Move> moves = new() { };
+            BitBoard occupiedSquares = this.GetOccupiedSquares();
+            BitBoard friendlyPieces = this.GetOccupiedSquares(piece.colour);
+            BitBoard opponentPieces = new(occupiedSquares.board ^ friendlyPieces.board);
+            if (piece.type == Piece.Type.Pawn)
+            {
+                BitBoard pushPawnSquare = new(piece.position);
+                Console.WriteLine((int)piece.colour);
+                pushPawnSquare.GenShift(8 - ((int)piece.colour * 16)); // -8 for black and 8 for white.
+                Console.WriteLine(pushPawnSquare.board);
+                if (pushPawnSquare.IntersectionOf(occupiedSquares).IsEqual(0)) // Square is not occupied;
+                {
+                    moves.Add(new Move(piece, pushPawnSquare));
+                    
+                    int homeRankShiftValue = 1 + (int)piece.colour * 5;
+                    BitBoard homeRank = new(firstRank << homeRankShiftValue);
+                    if (homeRank.IntersectionOf(piece.position).IsEqual(0))
+                    {
+                        BitBoard pushTwiceSquare = new(pushPawnSquare);
+                        pushTwiceSquare.GenShift(8 - ((int)piece.colour * 16));
+                        Console.WriteLine(pushTwiceSquare.board);
+                        if (pushTwiceSquare.IntersectionOf(occupiedSquares).IsEqual(0))
+                        {
+                            moves.Add(new Move(piece, pushTwiceSquare));
+                        }
+                    }
+                }
+
+                //if (canPushTwice())
+                //{
+                //    BitBoard pushTwiceSquare = new(piece.position);
+                //    pushTwiceSquare.GenShift((int)piece.colour * 16);
+                //    moves.Add(new Move(piece, pushTwiceSquare));
+                //}
+                return moves;
+            }
+            return new List<Move>();
+        }
+
+        public Board MovePiece(Move move)
+        {
+            for(int i = 0; i < this.pieces.Length; i++)
+            { 
+                if(move.piece == this.pieces[i])
+                {
+                    if(move.piece.colour != this.currentTurn)
+                    {
+                        throw new Exception($"Not {move.piece.colour}'s Turn");
+                    }
+                    List<Move> legalMoves = GetLegalMovesForPiece(move.piece);
+                    for(int j = 0; j < legalMoves.Count; j++)
+                    {
+                        Console.WriteLine(move.to.board);
+                        if (legalMoves[j].piece == move.piece && legalMoves[j].to.IsEqual(move.to))
+                        {
+                            Board result = new(this.pieces, this.currentTurn);
+                            result.pieces[i].position = move.to;
+                            return result;
+                        }
+                    }
+                    throw new IllegalMoveException();
+                }
+            }
+            throw new Exception("Piece not from this Board");
+        }
+    }
+
+    public class Move
+    {
+        public Piece piece;
+        public BitBoard to;
+        public Move(Piece piece, BitBoard to)
+        {
+            this.piece = piece;
+            this.to = to;
         }
     }
 }

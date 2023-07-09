@@ -9,39 +9,65 @@ namespace ChessTest
     public class BitBoardTest
     {
 
-        private static BitBoard board1 = new BitBoard(0);
-        private static BitBoard board2 = new BitBoard(0);
-        private static BitBoard board3 = new BitBoard(1);
+        private readonly BitBoard board1 = new(0);
+        private readonly BitBoard board2 = new(0);
+        private readonly BitBoard board3 = new(1);
         [TestMethod]
         public void IsEqual()
         {
-            Assert.IsTrue(board1.isEqual(board2));
-            Assert.IsFalse(board1.isEqual(board3));
+            Assert.IsTrue(board1.IsEqual(board2));
+            Assert.IsFalse(board1.IsEqual(board3));
         }
 
         [TestMethod]
-        public void unionWith()
+        public void UnionWith()
         {
-            BitBoard empty = new BitBoard(0x0000);
-            BitBoard aPawnPosition = new BitBoard(0x0100);
-            BitBoard bPawnPosition = new BitBoard(0x0200);
-            empty.unionWith(aPawnPosition);
-            empty.unionWith(bPawnPosition);
-            BitBoard expected = new BitBoard(0x0300);
-            Assert.IsTrue(empty.isEqual(expected));
+            BitBoard aPawnPosition = new(1 << 8);
+            BitBoard bPawnPosition = new(1 << 9);
+            BitBoard result = aPawnPosition.UnionWith(bPawnPosition);
+            BitBoard expected = new(0x0300);
+            Assert.IsTrue(result.IsEqual(expected));
         }
 
         [TestMethod]
-        public void unionWith2()
+        public void UnionWith2()
         {
-            BitBoard empty = new BitBoard(0x0000);
-            BitBoard aPawnPosition = new BitBoard(0x0200);
-            BitBoard bPawnPosition = new BitBoard(0x0400);
-            empty.unionWith(aPawnPosition);
-            empty.unionWith(bPawnPosition);
-            BitBoard expected = new BitBoard(0x0600);
-            Assert.IsTrue(empty.isEqual(expected));
+            BitBoard bPawnPosition = new(1 << 9);
+            BitBoard cPawnPosition = new(1 << 10);
+            BitBoard result = bPawnPosition.UnionWith(cPawnPosition);
+            BitBoard expected = new(0x0600);
+            Assert.IsTrue(result.IsEqual(expected));
         }
+
+        [TestMethod]
+        public void IntersectionOf()
+        {
+            BitBoard secondRank = new(Board.firstRank << 8);
+            BitBoard c2Pawn = new(1 << 10);
+            BitBoard result = secondRank.IntersectionOf(c2Pawn);
+            Assert.IsFalse(result.IsEqual(0));
+            Assert.IsTrue(result.IsEqual(c2Pawn));
+        }
+
+        [TestMethod]
+        public void IntersectionOf2()
+        {
+            BitBoard secondRank = new(Board.firstRank << 8);
+            BitBoard c3 = new(1 << 18);
+            BitBoard result = secondRank.IntersectionOf(c3);
+            Assert.IsTrue(result.IsEqual(0));
+            Assert.IsFalse(result.IsEqual(c3));
+        }
+
+        //[TestMethod]
+        //public void rotateLeft()
+        //{
+        //    BitBoard aPawnPosition = new BitBoard(1 << 8);
+        //    BitBoard hPawnPosition = new BitBoard(1 << 15);
+        //    aPawnPosition.rotateLeft();
+        //    Assert.IsTrue(aPawnPosition.isEqual(hPawnPosition));
+
+        //}
     }
 
     [TestClass]
@@ -49,27 +75,26 @@ namespace ChessTest
     {
 
         [TestMethod]
-        public void Constructor()
+        public void IsEqual()
         {
-            Piece pawn1 = new Piece(Piece.Colour.White, Piece.Type.Pawn, 0x0100);
-            Piece pawn2 = new Piece(Piece.Colour.White, Piece.Type.Pawn, 0x0200);
-            Assert.IsFalse(pawn1.position.isEqual(pawn2.position));
+            Piece pawn1 = new(Piece.Colour.White, Piece.Type.Pawn, 0x0100);
+            Piece pawn2 = new(Piece.Colour.White, Piece.Type.Pawn, 0x0200);
+            Assert.IsFalse(pawn1.position.IsEqual(pawn2.position));
         }
     }
 
     [TestClass]
     public class BoardTest
     {
-        private Board testBoard = new Board(null);
-        private BitBoard fullBoard = new BitBoard(0xFFFF00000000FFFF);
+        private readonly BitBoard fullBoard = new(0xFFFF00000000FFFF);
         [TestMethod]
-        public void resetBoard()
+        public void ResetBoard()
         {
-            testBoard.resetBoard();
-            BitBoard occupiedSquares = testBoard.getOccupiedSquares();
-            Assert.IsTrue(occupiedSquares.isEqual(fullBoard));
-            Piece? aRookBlack = testBoard.getPieceAtSquare(new BitBoard(0x100000000000000));
-            Piece? aPawnWhite = testBoard.getPieceAtSquare(new BitBoard(0x100));
+            Board testBoard = new();
+            BitBoard occupiedSquares = testBoard.GetOccupiedSquares();
+            Assert.IsTrue(occupiedSquares.IsEqual(fullBoard));
+            Piece? aRookBlack = testBoard.GetPieceAtSquare(new BitBoard(0x100000000000000));
+            Piece? aPawnWhite = testBoard.GetPieceAtSquare(new BitBoard(0x100));
             Assert.IsNotNull(aPawnWhite);
             Assert.AreEqual(aPawnWhite.colour, Piece.Colour.White);
             Assert.AreEqual(aPawnWhite.type, Piece.Type.Pawn);
@@ -78,6 +103,109 @@ namespace ChessTest
             Assert.AreEqual(aRookBlack.type, Piece.Type.Rook);
 
         }
+
+        [TestMethod]
+        public void GetLegalMovesForPiece()
+        {
+            Board testBoard = new();
+            Piece? dPawn = testBoard.GetPieceAtSquare(new BitBoard(1 << 11)); // d2
+            Assert.IsNotNull(dPawn);
+            Assert.AreEqual(dPawn.colour, Piece.Colour.White);
+            Assert.AreEqual(dPawn.type, Piece.Type.Pawn);
+            List<Move> possibleMoves = testBoard.GetLegalMovesForPiece(dPawn);
+            BitBoard expectedToD3 = new(1 << 19); // d3
+            BitBoard expectedToD4 = new(1 << 27); // d4
+            Assert.AreEqual(possibleMoves.Count(), 2);
+            Assert.AreEqual(possibleMoves[0].piece, dPawn);
+            Assert.IsTrue(possibleMoves[0].to.IsEqual(expectedToD3));
+            Assert.AreEqual(possibleMoves[1].piece, dPawn);
+            Assert.IsTrue(possibleMoves[1].to.IsEqual(expectedToD4));
+        }
+
+        [TestMethod]
+        public void GetOccupiedSquares()
+        {
+            Board testBoard = new();
+            testBoard.ResetBoard();
+            BitBoard blackPieces = testBoard.GetOccupiedSquares(Piece.Colour.Black);
+            BitBoard whitePieces = testBoard.GetOccupiedSquares(Piece.Colour.White);
+            Assert.IsTrue(blackPieces.IsEqual(0xFFFF000000000000));
+            Assert.IsTrue(whitePieces.IsEqual(0x000000000000FFFF));
+        }
+
+        [TestMethod]
+        public void Move()
+        {
+            Board initialBoard = new();
+            Move d3 = new(initialBoard.GetPieceAtSquare(new BitBoard(1 << 11)), new BitBoard(1<<19));
+            Board move1W = initialBoard.MovePiece(d3);
+            Piece? pushedDPawn = move1W.GetPieceAtSquare(new BitBoard(1 << 19));
+            Assert.IsNotNull(pushedDPawn);
+            Assert.IsFalse(pushedDPawn == d3.piece);
+        }
+
+        [TestMethod]
+        public void PlayD4()
+        {
+            Board initialBoard = new();
+            Move d4 = new(initialBoard.GetPieceAtSquare(new BitBoard(1 << 11)), new BitBoard(1 << 27));
+            Board move1W = initialBoard.MovePiece(d4);
+            Piece? pushedDPawn = move1W.GetPieceAtSquare(new BitBoard(1 << 27));
+            Assert.IsNotNull(pushedDPawn);
+            Assert.IsFalse(pushedDPawn == d4.piece);
+        }
+
+        [TestMethod]
+        public void PlayD5()
+        {
+            Board initialBoard = new();
+            BitBoard d7 = new(1);
+            d7.GenShift(51);
+            Piece? d7Pawn = initialBoard.GetPieceAtSquare(d7);
+            Assert.IsNotNull(d7Pawn);
+            BitBoard d5 = new(1);
+            d5.GenShift(35);
+            Move pawnToD5 = new(d7Pawn, d5);
+            Board move1B;
+            try
+            {
+                move1B = initialBoard.MovePiece(pawnToD5);
+                throw new Exception("Must Fail");
+            } catch (Exception ex)
+            {
+                Assert.AreEqual(ex.Message, "Not Black's Turn");
+            }
+
+            Move d4 = new(initialBoard.GetPieceAtSquare(new BitBoard(1 << 11)), new BitBoard(1 << 27));
+            Board move1W = initialBoard.MovePiece(d4);
+
+            d7Pawn = move1W.GetPieceAtSquare(d7);
+            Assert.IsNotNull(d7Pawn);
+            pawnToD5 = new(d7Pawn, d5);
+            move1B = move1W.MovePiece(pawnToD5);
+            Piece? d5Pawn = move1B.GetPieceAtSquare(new BitBoard(1 << 35));
+            Assert.IsNotNull(d5Pawn);
+            Assert.IsFalse(d5Pawn == d7Pawn);
+        }
+
+        //[TestMethod]
+        //public void QueensGambitAccepted()
+        //{
+        //    Board testBoard = new();
+        //    testBoard.ResetBoard();
+        //    Piece? dPawn = testBoard.GetPieceAtSquare(new BitBoard(1 << 11)); // d2
+        //    Assert.IsNotNull(dPawn);
+        //    Assert.AreEqual(dPawn.colour, Piece.Colour.White);
+        //    Assert.AreEqual(dPawn.type, Piece.Type.Pawn);
+        //    List<Move> possibleMoves = testBoard.GetLegalMovesForPiece(dPawn);
+        //    BitBoard expectedToD3 = new(1 << 19); // d3
+        //    BitBoard expectedToD4 = new(1 << 27); // d4
+        //    Assert.AreEqual(possibleMoves.Count(), 2);
+        //    Assert.AreEqual(possibleMoves[0].piece, dPawn);
+        //    Assert.IsTrue(possibleMoves[0].to.IsEqual(expectedToD3));
+        //    Assert.AreEqual(possibleMoves[1].piece, dPawn);
+        //    Assert.IsTrue(possibleMoves[1].to.IsEqual(expectedToD4));
+        //}
     }
 
 }
