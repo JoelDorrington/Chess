@@ -101,6 +101,7 @@ namespace Chess.Shared
     {
         public Piece[] pieces;
         public Piece.Colour currentTurn;
+        public Move? movePlayed = null;
         public Board()
         {
             this.pieces = new Piece[32];
@@ -120,7 +121,7 @@ namespace Chess.Shared
 
         public const ulong a1h8Diagonal = 0x8040201008040201;
         public const ulong a8h1Diagonal = 0x0102040810204080;
-        public const ulong a1File = 0x0101010101010101;
+        public const ulong aFile = 0x0101010101010101;
         public const ulong firstRank = 0x00000000000000FF;
 
         public void ResetBoard()
@@ -213,9 +214,7 @@ namespace Chess.Shared
             if (piece.type == Piece.Type.Pawn)
             {
                 BitBoard pushPawnSquare = new(piece.position);
-                Console.WriteLine((int)piece.colour);
                 pushPawnSquare.GenShift(8 - ((int)piece.colour * 16)); // -8 for black and 8 for white.
-                Console.WriteLine(pushPawnSquare.board);
                 if (pushPawnSquare.IntersectionOf(occupiedSquares).IsEqual(0)) // Square is not occupied;
                 {
                     moves.Add(new Move(piece, pushPawnSquare));
@@ -226,7 +225,6 @@ namespace Chess.Shared
                     {
                         BitBoard pushTwiceSquare = new(pushPawnSquare);
                         pushTwiceSquare.GenShift(8 - ((int)piece.colour * 16));
-                        Console.WriteLine(pushTwiceSquare.board);
                         if (pushTwiceSquare.IntersectionOf(occupiedSquares).IsEqual(0))
                         {
                             moves.Add(new Move(piece, pushTwiceSquare));
@@ -234,15 +232,24 @@ namespace Chess.Shared
                     }
                 }
 
-                //if (canPushTwice())
-                //{
-                //    BitBoard pushTwiceSquare = new(piece.position);
-                //    pushTwiceSquare.GenShift((int)piece.colour * 16);
-                //    moves.Add(new Move(piece, pushTwiceSquare));
-                //}
+                BitBoard captureLeft = new(piece.position);
+                captureLeft.GenShift(7 - ((int)piece.colour * 16));
+                if (piece.position.IntersectionOf(aFile).IsEqual(0) && !opponentPieces.IntersectionOf(captureLeft).IsEqual(0))
+                {
+                    moves.Add(new Move(piece, captureLeft, true));
+                };
+                BitBoard captureRight = new(piece.position);
+                BitBoard hFile = new(aFile);
+                hFile.GenShift(7);
+                captureRight.GenShift(9 - ((int)piece.colour * 16));
+                if (piece.position.IntersectionOf(hFile).IsEqual(0) && !opponentPieces.IntersectionOf(captureRight).IsEqual(0))
+                {
+                    moves.Add(new Move(piece, captureLeft, true));
+                };
+
                 return moves;
             }
-            return new List<Move>();
+            return moves;
         }
 
         public Board MovePiece(Move move)
@@ -258,10 +265,18 @@ namespace Chess.Shared
                     List<Move> legalMoves = GetLegalMovesForPiece(move.piece);
                     for(int j = 0; j < legalMoves.Count; j++)
                     {
-                        Console.WriteLine(move.to.board);
                         if (legalMoves[j].piece == move.piece && legalMoves[j].to.IsEqual(move.to))
                         {
                             Board result = new(this.pieces, this.currentTurn);
+                            this.movePlayed = legalMoves[j];
+                            if (legalMoves[j].isCapture)
+                            {
+                                Piece? capturedPiece = result.GetPieceAtSquare(move.to);
+                                if(capturedPiece != null)
+                                {
+                                    capturedPiece.position = new(0);
+                                }
+                            }
                             result.pieces[i].position = move.to;
                             return result;
                         }
@@ -277,10 +292,18 @@ namespace Chess.Shared
     {
         public Piece piece;
         public BitBoard to;
+        public bool isCapture;
         public Move(Piece piece, BitBoard to)
         {
             this.piece = piece;
             this.to = to;
+            this.isCapture = false;
+        }
+        public Move(Piece piece, BitBoard to, bool isCapture)
+        {
+            this.piece = piece;
+            this.to = to;
+            this.isCapture = isCapture;
         }
     }
 }

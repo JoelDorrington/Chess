@@ -188,24 +188,62 @@ namespace ChessTest
             Assert.IsFalse(d5Pawn == d7Pawn);
         }
 
-        //[TestMethod]
-        //public void QueensGambitAccepted()
-        //{
-        //    Board testBoard = new();
-        //    testBoard.ResetBoard();
-        //    Piece? dPawn = testBoard.GetPieceAtSquare(new BitBoard(1 << 11)); // d2
-        //    Assert.IsNotNull(dPawn);
-        //    Assert.AreEqual(dPawn.colour, Piece.Colour.White);
-        //    Assert.AreEqual(dPawn.type, Piece.Type.Pawn);
-        //    List<Move> possibleMoves = testBoard.GetLegalMovesForPiece(dPawn);
-        //    BitBoard expectedToD3 = new(1 << 19); // d3
-        //    BitBoard expectedToD4 = new(1 << 27); // d4
-        //    Assert.AreEqual(possibleMoves.Count(), 2);
-        //    Assert.AreEqual(possibleMoves[0].piece, dPawn);
-        //    Assert.IsTrue(possibleMoves[0].to.IsEqual(expectedToD3));
-        //    Assert.AreEqual(possibleMoves[1].piece, dPawn);
-        //    Assert.IsTrue(possibleMoves[1].to.IsEqual(expectedToD4));
-        //}
+        [TestMethod]
+        public void QueensGambitAccepted()
+        {
+            Board initialBoard = new();
+            BitBoard d7 = new(1);
+            d7.GenShift(51);
+            Piece? d7Pawn = initialBoard.GetPieceAtSquare(d7);
+            Assert.IsNotNull(d7Pawn);
+            BitBoard d5 = new(1);
+            d5.GenShift(35);
+            Move pawnToD5 = new(d7Pawn, d5);
+            Board move1B;
+            try
+            {
+                move1B = initialBoard.MovePiece(pawnToD5);
+                throw new Exception("Must Fail");
+            }
+            catch (Exception ex)
+            {
+                Assert.AreEqual(ex.Message, "Not Black's Turn");
+            }
+
+            Move d4 = new(initialBoard.GetPieceAtSquare(new BitBoard(1 << 11)), new BitBoard(1 << 27));
+            Board move1W = initialBoard.MovePiece(d4);
+
+            d7Pawn = move1W.GetPieceAtSquare(d7);
+            Assert.IsNotNull(d7Pawn);
+            pawnToD5 = new(d7Pawn, d5);
+            move1B = move1W.MovePiece(pawnToD5);
+            Piece? d5Pawn = move1B.GetPieceAtSquare(new BitBoard(1 << 35));
+            Assert.IsNotNull(d5Pawn);
+            Assert.IsFalse(d5Pawn == d7Pawn);
+
+            BitBoard c2 = new(1);
+            c2.GenShift(10);
+            BitBoard c4 = new(1);
+            c4.GenShift(26);
+            Piece? c2Pawn = move1B.GetPieceAtSquare(c2);
+            Assert.IsNotNull(c2Pawn);
+            Move pawnToC4 = new(c2Pawn, c4);
+            Board move2W = move1B.MovePiece(pawnToC4);
+
+            d5Pawn = move2W.GetPieceAtSquare(d5);
+            Piece? c4Pawn = move2W.GetPieceAtSquare(c4);
+            Assert.IsNotNull(d5Pawn);
+            Assert.IsNotNull(c4Pawn);
+            int index = Array.IndexOf(move2W.pieces, c4Pawn);
+            Move d5xc4 = new(d5Pawn, c4);
+            Board move2B = move2W.MovePiece(d5xc4);
+            Piece capturedPawn = move2B.pieces[index];
+            Assert.IsTrue(capturedPawn.position.IsEqual(0));
+            Assert.IsNotNull(move2W.movePlayed);
+            Assert.AreEqual(d5xc4.piece, move2W.movePlayed.piece);
+            Assert.IsTrue(d5xc4.to.IsEqual(move2W.movePlayed.to));
+            Assert.IsNull(move2B.movePlayed);
+        }
     }
 
 }
