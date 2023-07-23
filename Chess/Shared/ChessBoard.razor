@@ -1,0 +1,117 @@
+﻿<HeadContent>
+    <style>
+        :root {
+            --square-size: 75px;
+        }
+        .board {
+            width: calc(--sqare-size * 8);
+            height: calc(--sqare-size * 8);
+        }
+        .rank {
+            display: flex;
+            margin: 0;
+            width: 100%;
+            height: var(--square-size);
+            --start-color: var(--light-square-color, #ccc);
+            --alt-color: var(--dark-square-color, #333);
+        }
+
+        .rank:nth-child(even) {
+            --start-color: var(--dark-square-color, #333);
+            --alt-color: var(--light-square-color, #ccc);
+        }
+
+        .file {
+            width: var(--square-size);
+            height: var(--square-size);
+            background-color: var(--start-color);
+            position: relative;
+        }
+
+        .file:nth-child(even) {
+            background-color: var(--alt-color);
+        }
+
+        .move-indicator {
+            width: var(--square-size);
+            height: var(--square-size);
+            position: absolute;
+            transform: scale(0.8);
+            top: 0;
+            left: 0;
+            background-color: #0006;
+            border-radius: 50%;
+        }
+    </style>
+</HeadContent>
+<h3>ChessBoard</h3>
+<div class="board">
+    @for(var rank = 7; rank>=0; rank--)
+    {
+        <div class="rank">
+            @for(var file = 0; file<8; file++)
+            {
+                var thisFile = file;
+                var thisRank = rank;
+                var coords = $"{thisFile},{thisRank}";
+                <div class="file">
+                    @if (moves.ContainsKey($"{thisFile},{thisRank}"))
+                    {
+                        Console.WriteLine($"Got Move {thisFile},{thisRank}");
+                        <span class="move-indicator" @onclick="() => submitMove(moves[coords])"></span>
+                    }
+                    @if (layout != null && layout[thisFile][thisRank] != null)
+                    {
+                        <img title="@thisFile,@thisRank" @onclick="() => showMovesForPiece(thisFile, thisRank)" src="@GetPieceImage(layout[thisFile][thisRank])" style="width: var(--square-size);" />
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    public Board? board;
+    public Piece[][]? layout;
+    public Dictionary<string,Move> moves = new Dictionary<string, Move>();
+    public List<Board> history = new List<Board>();
+    public string GetPieceImage(Piece? piece)
+    {
+        if (piece == null) return "";
+        return $"images/{piece.type.ToString()}{piece.colour.ToString()}.png";
+    }
+    public void showMovesForPiece(int file, int rank)
+    {
+        Piece piece = this.layout[file][rank];
+        this.moves = new Dictionary<string, Move>();
+        if (this.board == null || piece == null) return;
+        List<Move> legalMoves = this.board.GetLegalMovesForPiece(piece);
+        for(int i = 0; i < legalMoves.Count; i++)
+        {   
+            int[] coords = legalMoves[i].to.GetCoordinates();
+            Console.WriteLine($"{coords[0]},{coords[1]}");
+            this.moves[$"{coords[0]},{coords[1]}"] = legalMoves[i];
+        }
+        List<string> keys = new List<string>(moves.Keys);
+    }
+    public void submitMove(Move move)
+    {
+        Board oldBoard = this.board;
+        this.moves = new Dictionary<string, Move>();
+        try
+        {
+            this.board = this.board.MovePiece(move);
+            this.layout = this.board.GetLayout();
+            this.history.Add(this.board);
+        } catch(Exception e)
+        {
+            Console.WriteLine(e);
+        }
+    }
+    protected override void OnInitialized()
+    {
+        board = new();
+        layout = board.GetLayout();
+    }
+
+}

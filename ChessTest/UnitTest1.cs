@@ -81,6 +81,19 @@ namespace ChessTest
             Piece pawn2 = new(Piece.Colour.White, Piece.Type.Pawn, 0x0200);
             Assert.IsFalse(pawn1.position.IsEqual(pawn2.position));
         }
+        
+        [TestMethod]
+        public void GetCoordinates()
+        {
+            Piece pawn1 = new(Piece.Colour.White, Piece.Type.Pawn, 0x0100);
+            Piece pawn2 = new(Piece.Colour.White, Piece.Type.Pawn, 0x0200);
+            int[] coordinates1 = pawn1.GetCoordinates();
+            int[] coordinates2 = pawn2.GetCoordinates();
+            Assert.AreEqual(0, coordinates1[0]);
+            Assert.AreEqual(1, coordinates1[1]);
+            Assert.AreEqual(1, coordinates2[0]);
+            Assert.AreEqual(1, coordinates2[1]);
+        }
     }
 
     [TestClass]
@@ -102,6 +115,46 @@ namespace ChessTest
             Assert.AreEqual(aRookBlack.colour, Piece.Colour.Black);
             Assert.AreEqual(aRookBlack.type, Piece.Type.Rook);
 
+        }
+
+        [TestMethod]
+        public void GetLayout()
+        {
+            Board testBoard = new();
+            Piece[][] layout = testBoard.GetLayout();
+            Assert.AreEqual(Piece.Type.Rook, layout[0][0].type);
+            Assert.AreEqual(Piece.Type.Knight, layout[1][0].type);
+            Assert.AreEqual(Piece.Type.Bishop, layout[2][0].type);
+            Assert.AreEqual(Piece.Type.Queen, layout[3][0].type);
+            Assert.AreEqual(Piece.Type.King, layout[4][0].type);
+            Assert.AreEqual(Piece.Type.Bishop, layout[5][0].type);
+            Assert.AreEqual(Piece.Type.Knight, layout[6][0].type);
+            Assert.AreEqual(Piece.Type.Rook, layout[7][0].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[0][1].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[1][1].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[2][1].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[3][1].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[4][1].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[5][1].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[6][1].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[7][1].type);
+
+            Assert.AreEqual(Piece.Type.Pawn, layout[0][6].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[1][6].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[2][6].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[3][6].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[4][6].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[5][6].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[6][6].type);
+            Assert.AreEqual(Piece.Type.Pawn, layout[7][6].type);
+            Assert.AreEqual(Piece.Type.Rook, layout[0][7].type);
+            Assert.AreEqual(Piece.Type.Knight, layout[1][7].type);
+            Assert.AreEqual(Piece.Type.Bishop, layout[2][7].type);
+            Assert.AreEqual(Piece.Type.Queen, layout[3][7].type);
+            Assert.AreEqual(Piece.Type.King, layout[4][7].type);
+            Assert.AreEqual(Piece.Type.Bishop, layout[5][7].type);
+            Assert.AreEqual(Piece.Type.Knight, layout[6][7].type);
+            Assert.AreEqual(Piece.Type.Rook, layout[7][7].type);
         }
 
         [TestMethod]

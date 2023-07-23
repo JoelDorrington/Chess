@@ -7,6 +7,25 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Remove="Shared\SurveyPrompt.razor" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="wwwroot\images\BishopBlack.png" />
+    <None Include="wwwroot\images\BishopWhite.png" />
+    <None Include="wwwroot\images\KingBlack.png" />
+    <None Include="wwwroot\images\KingWhite.png" />
+    <None Include="wwwroot\images\KnightBlack.png" />
+    <None Include="wwwroot\images\KnightWhite.png" />
+    <None Include="wwwroot\images\PawnBlack.png" />
+    <None Include="wwwroot\images\PawnWhite.png" />
+    <None Include="wwwroot\images\QueenBlack.png" />
+    <None Include="wwwroot\images\QueenWhite.png" />
+    <None Include="wwwroot\images\RookBlack.png" />
+    <None Include="wwwroot\images\RookWhite.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="7.0.7" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="7.0.7" PrivateAssets="all" />
   </ItemGroup>
