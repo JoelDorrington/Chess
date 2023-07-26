@@ -5,6 +5,8 @@ namespace Chess.Shared
     public class BitBoard
     {
         public ulong board;
+        private const ulong notAFile = 0xfefefefefefefefe; // ~0x0101010101010101
+        private const ulong notHFile = 0x7f7f7f7f7f7f7f7f; // ~0x8080808080808080
         public BitBoard(ulong board)
         {
             this.board = board;
@@ -39,10 +41,34 @@ namespace Chess.Shared
         {
             return new BitBoard(this.board & other);
         }
-
+        
         public void GenShift(int shift)
         {
             this.board = (shift > 0) ? (this.board << shift) : (this.board >> -shift);
+        }
+
+        public void StepOne(int shift)
+        {
+            if (shift > 9 || shift < -9)
+            {
+                throw new Exception("shift value out of range. Must be from -9 to 9 inclusive.");
+            }
+            if (shift == 1 || shift == 9 || shift == -7) this.board = this.board & notHFile;
+            if (shift == -1 || shift == -9 || shift == 7) this.board = this.board & notAFile;
+            this.GenShift(shift);
+        }
+
+        public List<BitBoard> Enumerate()
+        {
+            List<BitBoard> result = new List<BitBoard>();
+            for(int i = 0; i<64; i++)
+            {
+                if(!this.IntersectionOf((ulong)Math.Pow(2, i)).IsEqual(0))
+                {
+                    result.Add(new BitBoard((ulong)Math.Pow(2, i)));
+                }
+            }
+            return result;
         }
 
         public int[] GetCoordinates()

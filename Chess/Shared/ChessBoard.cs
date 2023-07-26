@@ -31,6 +31,9 @@ namespace Chess.Shared
         public const ulong a8h1Diagonal = 0x0102040810204080;
         public const ulong aFile = 0x0101010101010101;
         public const ulong firstRank = 0x00000000000000FF;
+        public const ulong knightMoveTemplate = 0x0000000A1100110A;
+        public const int knightMoveTemplateRank = 2;
+        public const int knightMoveTemplateFile = 2;
 
         public void ResetBoard()
         {
@@ -183,6 +186,41 @@ namespace Chess.Shared
                 };
 
                 return moves;
+            }
+            if(piece.type == Piece.Type.Knight)
+            {
+                int[] pieceCoords = piece.GetCoordinates();
+                BitBoard legalMoves = new(knightMoveTemplate);
+                int verticalShiftCount = pieceCoords[1] - knightMoveTemplateRank;
+                int horizontalShiftCount = pieceCoords[0] - knightMoveTemplateFile;
+                for (int i = 0; i < Math.Abs(verticalShiftCount); i++)
+                {
+                    if (verticalShiftCount > 0) // Shift up
+                    {
+                        legalMoves.StepOne(8);
+                    }
+                    else // Shift down
+                    {
+                        legalMoves.StepOne(-8);
+                    }
+                }
+                for (int i = 0; i < Math.Abs(horizontalShiftCount); i++)
+                {
+                    if (horizontalShiftCount > 0) // Shift right
+                    {
+                        legalMoves.StepOne(1);
+                    }
+                    else // Shift left
+                    {
+                        legalMoves.StepOne(-1);
+                    }
+                }
+                legalMoves = new(legalMoves.board & ~friendlyPieces.board);
+                List<BitBoard> knightMoves = legalMoves.Enumerate();
+                for(int i = 0; i < knightMoves.Count; i++)
+                {
+                    moves.Add(new Move(piece, knightMoves[i], !knightMoves[i].IntersectionOf(opponentPieces).IsEqual(0)));
+                }
             }
             return moves;
         }
