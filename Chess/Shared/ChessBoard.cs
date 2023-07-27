@@ -222,6 +222,21 @@ namespace Chess.Shared
                     moves.Add(new Move(piece, knightMoves[i], !knightMoves[i].IntersectionOf(opponentPieces).IsEqual(0)));
                 }
             }
+            if(piece.type == Piece.Type.Bishop)
+            {
+                BitBoard attacks = piece.position.RayAttack(9, occupiedSquares)
+                    .UnionWith(piece.position.RayAttack(7, occupiedSquares))
+                    .UnionWith(piece.position.RayAttack(-9, occupiedSquares))
+                    .UnionWith(piece.position.RayAttack(-7, occupiedSquares))
+                    .AndNot(friendlyPieces);
+                List<BitBoard> bishopMoves = attacks.Enumerate();
+                Console.WriteLine($"Bishop Moves: {bishopMoves.Count}");
+                for(int i = 0;i < bishopMoves.Count; i++)
+                {
+                    moves.Add(new Move(piece, bishopMoves[i], !bishopMoves[i].IntersectionOf(opponentPieces).IsEqual(0)));
+                }
+                    
+            }
             return moves;
         }
 

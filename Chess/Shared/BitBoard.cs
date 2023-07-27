@@ -80,14 +80,33 @@ namespace Chess.Shared
             return coordinates;
         }
 
-        //public void RotateLeft(int shift)
-        //{
-        //    this.board = (this.board << shift) | (this.board >> -shift);
-        //}
-        //public void RotateRight(int shift)
-        //{
-        //    this.board = (this.board >> shift) | (this.board << -shift);
-        //}
+        public BitBoard RayAttack(int direction, BitBoard occupiedSquares)
+        {
+            ulong initialPosition = this.board;
+            Console.WriteLine($"Initial Position: {initialPosition:X}");
+            BitBoard flood = new(0);
+            BitBoard propagator = new(this.board);
+            if (direction > 9 || direction < -9)
+            {
+                throw new Exception("shift value out of range. Must be from -9 to 9 inclusive.");
+            }
+            Console.WriteLine($"Direction: {direction}");
+            for(int i = 0; i < 7; i++)
+            {
+                Console.WriteLine($"Propagator: {propagator.board:X}");
+                flood.board |= propagator.board &~occupiedSquares.board;
+                propagator.StepOne(direction);
+                propagator.board = propagator.board & ~occupiedSquares.board;
+            }
+            flood.board |= initialPosition;
+            flood.StepOne(direction);
+            return flood;
+        }
+
+        public BitBoard AndNot(BitBoard board)
+        {
+            return new(this.board & ~board.board);
+        }
 
     }
 }
