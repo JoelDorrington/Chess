@@ -10,15 +10,18 @@ namespace Chess.Shared
         public Piece[] pieces;
         public Piece.Colour currentTurn;
         public Move? movePlayed = null;
+        public Move? lastMove = null;
         public Board()
         {
             this.pieces = new Piece[32];
             this.currentTurn = Piece.Colour.White;
             this.ResetBoard();
         }
-        public Board(Piece[] pieces, Piece.Colour lastTurn)
+        public Board(Piece[] pieces, Move lastMove)
         {
             this.pieces = new Piece[32];
+            this.lastMove = lastMove;
+            Piece.Colour lastTurn = lastMove.piece.colour;
             this.currentTurn = lastTurn == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
             Array.Copy(pieces, this.pieces, 32);
             for (int i = 0; i < this.pieces.Length; i++)
@@ -150,40 +153,59 @@ namespace Chess.Shared
             BitBoard opponentPieces = new(occupiedSquares.board ^ friendlyPieces.board);
             if (piece.type == Piece.Type.Pawn)
             {
-                BitBoard pushPawnSquare = new(piece.position);
-                pushPawnSquare.GenShift(8 - ((int)piece.colour * 16)); // -8 for black and 8 for white.
-                if (pushPawnSquare.IntersectionOf(occupiedSquares).IsEqual(0)) // Square is not occupied;
+                int homeRankShiftValue = 8 + (int)piece.colour * (5 * 8);
+                BitBoard homeRank = new BitBoard(firstRank).GenShift(homeRankShiftValue);
+                BitBoard pushPawnSquare = new BitBoard(piece.position).GenShift(8 - ((int)piece.colour * 16)); // -8 for black and 8 for white.
+                if (!pushPawnSquare.IntersectsWith(occupiedSquares)) // Square is not occupied;
                 {
                     moves.Add(new Move(piece, pushPawnSquare));
 
-                    int homeRankShiftValue = 8 + (int)piece.colour * (5 * 8);
-                    BitBoard homeRank = new(firstRank << homeRankShiftValue);
                     Console.WriteLine($"HomeRank {homeRank.board:X}");
-                    if (!homeRank.IntersectionOf(piece.position).IsEqual(0))
+                    if (homeRank.IntersectsWith(piece.position))
                     {
                         BitBoard pushTwiceSquare = new(pushPawnSquare);
                         pushTwiceSquare.GenShift(8 - ((int)piece.colour * 16));
-                        if (pushTwiceSquare.IntersectionOf(occupiedSquares).IsEqual(0))
+                        if (!pushTwiceSquare.IntersectsWith(occupiedSquares))
                         {
                             moves.Add(new Move(piece, pushTwiceSquare));
                         }
                     }
                 }
 
-                BitBoard captureLeft = new(piece.position);
-                captureLeft.GenShift(7 - ((int)piece.colour * 16));
-                if (piece.position.IntersectionOf(aFile).IsEqual(0) && !opponentPieces.IntersectionOf(captureLeft).IsEqual(0))
+                BitBoard captureLeft = new BitBoard(piece.position).GenShift(7 - ((int)piece.colour * 16));
+                if (!piece.position.IntersectsWith(aFile) && opponentPieces.IntersectsWith(captureLeft))
                 {
                     moves.Add(new Move(piece, captureLeft, true));
                 };
-                BitBoard captureRight = new(piece.position);
-                BitBoard hFile = new(aFile);
-                hFile.GenShift(7);
-                captureRight.GenShift(9 - ((int)piece.colour * 16));
-                if (piece.position.IntersectionOf(hFile).IsEqual(0) && !opponentPieces.IntersectionOf(captureRight).IsEqual(0))
+                BitBoard captureRight = new BitBoard(piece.position).GenShift(9 - ((int)piece.colour * 16));
+                BitBoard hFile = new BitBoard(aFile).GenShift(7);
+                if (!piece.position.IntersectsWith(hFile) && opponentPieces.IntersectsWith(captureRight))
                 {
                     moves.Add(new Move(piece, captureRight, true));
                 };
+
+                BitBoard enPassantRank = new BitBoard(0x000000FF00000000).GenShift(-8 * (int)piece.colour);
+                BitBoard opponentHomeRank = piece.colour == Piece.Colour.White 
+                    ? new BitBoard(firstRank).GenShift(48) : new BitBoard(firstRank).GenShift(8);
+                if (lastMove != null && lastMove.piece.type == Piece.Type.Pawn // Last move was a pawn move
+                    && piece.position.IntersectsWith(enPassantRank) // This piece is on the enpassant rank
+                    && lastMove.from.IntersectsWith(opponentHomeRank) // The pawn moved from its home square
+                    && lastMove.to.IntersectsWith(enPassantRank)) // The pawn moved 2 squares
+                {
+                    BitBoard enPassantTarget = new(piece.position);
+                    enPassantTarget.GenShift(-1);
+                    if(lastMove.to.IsEqual(enPassantTarget))
+                    {
+                        moves.Add(new Move(piece, captureLeft, new BitBoard(enPassantTarget)));
+                    }
+                    enPassantTarget.GenShift(1);
+                    enPassantTarget.GenShift(1);
+                    if (lastMove.to.IsEqual(enPassantTarget))
+                    {
+                        moves.Add(new Move(piece, captureRight, new BitBoard(enPassantTarget)));
+                    }
+
+                }
 
                 return moves;
             }
@@ -219,7 +241,7 @@ namespace Chess.Shared
                 List<BitBoard> knightMoves = legalMoves.Enumerate();
                 for(int i = 0; i < knightMoves.Count; i++)
                 {
-                    moves.Add(new Move(piece, knightMoves[i], !knightMoves[i].IntersectionOf(opponentPieces).IsEqual(0)));
+                    moves.Add(new Move(piece, knightMoves[i], knightMoves[i].IntersectsWith(opponentPieces)));
                 }
             }
             if(piece.type == Piece.Type.Bishop)
@@ -233,7 +255,7 @@ namespace Chess.Shared
                 Console.WriteLine($"Bishop Moves: {bishopMoves.Count}");
                 for(int i = 0;i < bishopMoves.Count; i++)
                 {
-                    moves.Add(new Move(piece, bishopMoves[i], !bishopMoves[i].IntersectionOf(opponentPieces).IsEqual(0)));
+                    moves.Add(new Move(piece, bishopMoves[i], bishopMoves[i].IntersectsWith(opponentPieces)));
                 }
                     
             }
@@ -255,11 +277,11 @@ namespace Chess.Shared
                     {
                         if (legalMoves[j].piece == move.piece && legalMoves[j].to.IsEqual(move.to))
                         {
-                            Board result = new(this.pieces, this.currentTurn);
+                            Board result = new(this.pieces, move);
                             this.movePlayed = legalMoves[j];
                             if (legalMoves[j].isCapture)
                             {
-                                Piece? capturedPiece = result.GetPieceAtSquare(move.to);
+                                Piece? capturedPiece = move.victim != null ? result.GetPieceAtSquare(move.victim) : result.GetPieceAtSquare(move.to);
                                 if (capturedPiece != null)
                                 {
                                     capturedPiece.position = new(0);

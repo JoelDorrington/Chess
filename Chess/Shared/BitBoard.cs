@@ -41,13 +41,23 @@ namespace Chess.Shared
         {
             return new BitBoard(this.board & other);
         }
-        
-        public void GenShift(int shift)
+
+        public bool IntersectsWith(BitBoard other)
         {
-            this.board = (shift > 0) ? (this.board << shift) : (this.board >> -shift);
+            return !this.IntersectionOf(other).IsEqual(0);
+        }
+        public bool IntersectsWith(ulong other)
+        {
+            return !this.IntersectionOf(other).IsEqual(0);
         }
 
-        public void StepOne(int shift)
+        public BitBoard GenShift(int shift)
+        {
+            this.board = (shift > 0) ? (this.board << shift) : (this.board >> -shift);
+            return this;
+        }
+
+        public BitBoard StepOne(int shift)
         {
             if (shift > 9 || shift < -9)
             {
@@ -55,7 +65,7 @@ namespace Chess.Shared
             }
             if (shift == 1 || shift == 9 || shift == -7) this.board = this.board & notHFile;
             if (shift == -1 || shift == -9 || shift == 7) this.board = this.board & notAFile;
-            this.GenShift(shift);
+            return this.GenShift(shift);
         }
 
         public List<BitBoard> Enumerate()
