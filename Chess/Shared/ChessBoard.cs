@@ -88,7 +88,6 @@ namespace Chess.Shared
                 if (!piece.position.IsEqual(0))
                 {
                     int[] coords = piece.GetCoordinates();
-                    Console.WriteLine($"GetLayout coords {coords[0]},{coords[1]}");
                     layout[coords[0]][coords[1]] = piece;
                 }
             }
@@ -160,7 +159,6 @@ namespace Chess.Shared
                 {
                     moves.Add(new Move(piece, pushPawnSquare));
 
-                    Console.WriteLine($"HomeRank {homeRank.board:X}");
                     if (homeRank.IntersectsWith(piece.position))
                     {
                         BitBoard pushTwiceSquare = new(pushPawnSquare);
@@ -252,12 +250,61 @@ namespace Chess.Shared
                     .UnionWith(piece.position.RayAttack(-7, occupiedSquares))
                     .AndNot(friendlyPieces);
                 List<BitBoard> bishopMoves = attacks.Enumerate();
-                Console.WriteLine($"Bishop Moves: {bishopMoves.Count}");
                 for(int i = 0;i < bishopMoves.Count; i++)
                 {
                     moves.Add(new Move(piece, bishopMoves[i], bishopMoves[i].IntersectsWith(opponentPieces)));
                 }
-                    
+
+            }
+            if (piece.type == Piece.Type.Rook)
+            {
+                BitBoard attacks = piece.position.RayAttack(8, occupiedSquares)
+                    .UnionWith(piece.position.RayAttack(1, occupiedSquares))
+                    .UnionWith(piece.position.RayAttack(-8, occupiedSquares))
+                    .UnionWith(piece.position.RayAttack(-1, occupiedSquares))
+                    .AndNot(friendlyPieces);
+                List<BitBoard> rookMoves = attacks.Enumerate();
+                for (int i = 0; i < rookMoves.Count; i++)
+                {
+                    moves.Add(new Move(piece, rookMoves[i], rookMoves[i].IntersectsWith(opponentPieces)));
+                }
+
+            }
+            if (piece.type == Piece.Type.Queen)
+            {
+                BitBoard attacks = piece.position.RayAttack(8, occupiedSquares)
+                    .UnionWith(piece.position.RayAttack(1, occupiedSquares))
+                    .UnionWith(piece.position.RayAttack(-8, occupiedSquares))
+                    .UnionWith(piece.position.RayAttack(-1, occupiedSquares))
+                    .UnionWith(piece.position.RayAttack(9, occupiedSquares))
+                    .UnionWith(piece.position.RayAttack(7, occupiedSquares))
+                    .UnionWith(piece.position.RayAttack(-9, occupiedSquares))
+                    .UnionWith(piece.position.RayAttack(-7, occupiedSquares))
+                    .AndNot(friendlyPieces);
+                List<BitBoard> queenMoves = attacks.Enumerate();
+                for (int i = 0; i < queenMoves.Count; i++)
+                {
+                    moves.Add(new Move(piece, queenMoves[i], queenMoves[i].IntersectsWith(opponentPieces)));
+                }
+
+            }
+            if (piece.type == Piece.Type.King)
+            {
+                BitBoard attacks = new BitBoard(piece.position.board).StepOne(8)
+                    .UnionWith(new BitBoard(piece.position.board).StepOne(1))
+                    .UnionWith(new BitBoard(piece.position.board).StepOne(-8))
+                    .UnionWith(new BitBoard(piece.position.board).StepOne(-1))
+                    .UnionWith(new BitBoard(piece.position.board).StepOne(9))
+                    .UnionWith(new BitBoard(piece.position.board).StepOne(7))
+                    .UnionWith(new BitBoard(piece.position.board).StepOne(-9))
+                    .UnionWith(new BitBoard(piece.position.board).StepOne(-7))
+                    .AndNot(friendlyPieces);
+                List<BitBoard> kingMoves = attacks.Enumerate();
+                for (int i = 0; i < kingMoves.Count; i++)
+                {
+                    moves.Add(new Move(piece, kingMoves[i], kingMoves[i].IntersectsWith(opponentPieces)));
+                }
+
             }
             return moves;
         }

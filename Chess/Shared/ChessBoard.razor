@@ -44,7 +44,7 @@
         }
     </style>
 </HeadContent>
-<h3>ChessBoard</h3>
+<h3>ChessBoard <button @onclick="() => resetBoard()">Reset</button></h3>
 <div class="board">
     @for(var rank = 7; rank>=0; rank--)
     {
@@ -57,7 +57,6 @@
                 <div class="file">
                     @if (moves.ContainsKey($"{thisFile},{thisRank}"))
                     {
-                        Console.WriteLine($"Got Move {thisFile},{thisRank}");
                         <span class="move-indicator" @onclick="() => submitMove(moves[coords])"></span>
                     }
                     @if (layout != null && layout[thisFile][thisRank] != null)
@@ -89,7 +88,6 @@
         for(int i = 0; i < legalMoves.Count; i++)
         {   
             int[] coords = legalMoves[i].to.GetCoordinates();
-            Console.WriteLine($"{coords[0]},{coords[1]}");
             this.moves[$"{coords[0]},{coords[1]}"] = legalMoves[i];
         }
         List<string> keys = new List<string>(moves.Keys);
@@ -107,6 +105,13 @@
         {
             Console.WriteLine(e);
         }
+    }
+    public void resetBoard ()
+    {
+        board = new();
+        layout = board.GetLayout();
+        moves = new Dictionary<string, Move>();
+        history = new List<Board>();
     }
     protected override void OnInitialized()
     {
