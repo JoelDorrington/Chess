@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.IO;
 using System;
 using Chess.Shared;
+using System.Diagnostics;
 
 namespace ChessTest
 {
@@ -297,6 +298,7 @@ namespace ChessTest
             Assert.IsTrue(d5xc4.to.IsEqual(move2W.movePlayed.to));
             Assert.IsNull(move2B.movePlayed);
         }
+
     }
 
 }

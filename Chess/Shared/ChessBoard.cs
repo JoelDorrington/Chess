@@ -1,16 +1,47 @@
 ﻿using System.Collections.Generic;
+using System.IO.Pipelines;
+
 namespace Chess.Shared
 {
     public class IllegalMoveException : Exception
     {
         public IllegalMoveException() : base("Illegal Move") { }
     }
-    public class Board
+    public class PromotionTypeException : Exception
     {
+        public PromotionTypeException(string message) : base(message) { }
+    }
+
+    class Threat
+    {
+        public Piece attacker;
+        public BitBoard attackMap;
+        public Threat(Piece attacker, BitBoard attackMap)
+        {
+            this.attacker = attacker;
+            this.attackMap = attackMap;
+        }
+    }
+    public class Board
+    {   
+        public static uint lastId = 0;
+        public string Id = (Board.lastId++).ToString();
         public Piece[] pieces;
         public Piece.Colour currentTurn;
         public Move? movePlayed = null;
         public Move? lastMove = null;
+        public bool wCastleShort = true;
+        public bool wCastleLong = true;
+        public bool bCastleShort = true;
+        public bool bCastleLong = true;
+        private BitBoard occupiedSquares = new(0);
+        private BitBoard friendlyPieces = new(0);
+        private BitBoard opponentPieces = new(0);
+        private BitBoard controlledSquares = new(0);
+        public bool check = false;
+        private List<Threat> checkingPieces = new();
+        private List<Threat> pins = new();
+
         public Board()
         {
             this.pieces = new Piece[32];
@@ -19,60 +50,94 @@ namespace Chess.Shared
         }
         public Board(Piece[] pieces, Move lastMove)
         {
-            this.pieces = new Piece[32];
+            pieces = new Piece[32];
             this.lastMove = lastMove;
             Piece.Colour lastTurn = lastMove.piece.colour;
             this.currentTurn = lastTurn == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
-            Array.Copy(pieces, this.pieces, 32);
-            for (int i = 0; i < this.pieces.Length; i++)
+            Array.Copy(pieces, pieces, 32);
+            for (int i = 0; i < pieces.Length; i++)
             {
-                this.pieces[i] = this.pieces[i].Clone();
+                if (pieces[i] is Pawn) pieces[i] = new Pawn(pieces[i].colour, pieces[i].position.board);
+                if (pieces[i] is Knight) pieces[i] = new Knight(pieces[i].colour, pieces[i].position.board);
+                if (pieces[i] is Bishop) pieces[i] = new Bishop(pieces[i].colour, pieces[i].position.board);
+                if (pieces[i] is Rook) pieces[i] = new Rook(pieces[i].colour, pieces[i].position.board);
+                if (pieces[i] is Queen) pieces[i] = new Queen(pieces[i].colour, pieces[i].position.board);
+                if (pieces[i] is King) pieces[i] = new King(pieces[i].colour, pieces[i].position.board);
             }
+            this.CalculateThreats();
+        }
+        public Board(Board previousPosition)
+        {
+            if (previousPosition.movePlayed == null)
+            {
+                throw new Exception("previousPosition.movePlayed must not be null");
+            }
+            pieces = new Piece[32];
+            Array.Copy(previousPosition.pieces, pieces, 32);
+            for (int i = 0; i < pieces.Length; i++)
+            {
+                if (pieces[i] is Pawn) pieces[i] = new Pawn(pieces[i].colour, pieces[i].position.board);
+                if (pieces[i] is Knight) pieces[i] = new Knight(pieces[i].colour, pieces[i].position.board);
+                if (pieces[i] is Bishop) pieces[i] = new Bishop(pieces[i].colour, pieces[i].position.board);
+                if (pieces[i] is Rook) pieces[i] = new Rook(pieces[i].colour, pieces[i].position.board);
+                if (pieces[i] is Queen) pieces[i] = new Queen(pieces[i].colour, pieces[i].position.board);
+                if (pieces[i] is King) pieces[i] = new King(pieces[i].colour, pieces[i].position.board);
+            }
+            this.lastMove = previousPosition.movePlayed;
+            Piece.Colour lastTurn = this.lastMove.piece.colour;
+            this.currentTurn = lastTurn == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
+            this.wCastleShort = previousPosition.wCastleShort;
+            this.wCastleLong = previousPosition.wCastleLong;
+            this.bCastleShort = previousPosition.bCastleShort;
+            this.bCastleLong = previousPosition.bCastleLong;
+            this.CalculateThreats();
         }
 
-        public const ulong a1h8Diagonal = 0x8040201008040201;
-        public const ulong a8h1Diagonal = 0x0102040810204080;
-        public const ulong aFile = 0x0101010101010101;
-        public const ulong firstRank = 0x00000000000000FF;
-        public const ulong knightMoveTemplate = 0x0000000A1100110A;
-        public const int knightMoveTemplateRank = 2;
-        public const int knightMoveTemplateFile = 2;
+        public static ulong a1h8Diagonal = 0x8040201008040201;
+        public static ulong a8h1Diagonal = 0x0102040810204080;
+        public static ulong aFile = 0x0101010101010101;
+        public static ulong hFile = 0x8080808080808080;
+        public static ulong firstRank = 0x00000000000000FF;
+        public static ulong knightMoveTemplate = 0x0000000A1100110A;
+        public static int knightMoveTemplateRank = 2;
+        public static int knightMoveTemplateFile = 2;
 
         public void ResetBoard()
         {
-            this.pieces = new Piece[32];
-            this.pieces[0] = new Piece(Piece.Colour.White, Piece.Type.Rook, 1);
-            this.pieces[1] = new Piece(Piece.Colour.White, Piece.Type.Knight, 2);
-            this.pieces[2] = new Piece(Piece.Colour.White, Piece.Type.Bishop, 4);
-            this.pieces[3] = new Piece(Piece.Colour.White, Piece.Type.Queen, 8);
-            this.pieces[4] = new Piece(Piece.Colour.White, Piece.Type.King, 0x10);
-            this.pieces[5] = new Piece(Piece.Colour.White, Piece.Type.Bishop, 0x20);
-            this.pieces[6] = new Piece(Piece.Colour.White, Piece.Type.Knight, 0x40);
-            this.pieces[7] = new Piece(Piece.Colour.White, Piece.Type.Rook, 0x80);
-            this.pieces[8] = new Piece(Piece.Colour.White, Piece.Type.Pawn, 0x100);
-            this.pieces[9] = new Piece(Piece.Colour.White, Piece.Type.Pawn, 0x200);
-            this.pieces[10] = new Piece(Piece.Colour.White, Piece.Type.Pawn, 0x400);
-            this.pieces[11] = new Piece(Piece.Colour.White, Piece.Type.Pawn, 0x800);
-            this.pieces[12] = new Piece(Piece.Colour.White, Piece.Type.Pawn, 0x1000);
-            this.pieces[13] = new Piece(Piece.Colour.White, Piece.Type.Pawn, 0x2000);
-            this.pieces[14] = new Piece(Piece.Colour.White, Piece.Type.Pawn, 0x4000);
-            this.pieces[15] = new Piece(Piece.Colour.White, Piece.Type.Pawn, 0x8000);
-            this.pieces[16] = new Piece(Piece.Colour.Black, Piece.Type.Pawn, 0x1000000000000);
-            this.pieces[17] = new Piece(Piece.Colour.Black, Piece.Type.Pawn, 0x2000000000000);
-            this.pieces[18] = new Piece(Piece.Colour.Black, Piece.Type.Pawn, 0x4000000000000);
-            this.pieces[19] = new Piece(Piece.Colour.Black, Piece.Type.Pawn, 0x8000000000000);
-            this.pieces[20] = new Piece(Piece.Colour.Black, Piece.Type.Pawn, 0x10000000000000);
-            this.pieces[21] = new Piece(Piece.Colour.Black, Piece.Type.Pawn, 0x20000000000000);
-            this.pieces[22] = new Piece(Piece.Colour.Black, Piece.Type.Pawn, 0x40000000000000);
-            this.pieces[23] = new Piece(Piece.Colour.Black, Piece.Type.Pawn, 0x80000000000000);
-            this.pieces[24] = new Piece(Piece.Colour.Black, Piece.Type.Rook, 0x100000000000000);
-            this.pieces[25] = new Piece(Piece.Colour.Black, Piece.Type.Knight, 0x200000000000000);
-            this.pieces[26] = new Piece(Piece.Colour.Black, Piece.Type.Bishop, 0x400000000000000);
-            this.pieces[27] = new Piece(Piece.Colour.Black, Piece.Type.Queen, 0x800000000000000);
-            this.pieces[28] = new Piece(Piece.Colour.Black, Piece.Type.King, 0x1000000000000000);
-            this.pieces[29] = new Piece(Piece.Colour.Black, Piece.Type.Bishop, 0x2000000000000000);
-            this.pieces[30] = new Piece(Piece.Colour.Black, Piece.Type.Knight, 0x4000000000000000);
-            this.pieces[31] = new Piece(Piece.Colour.Black, Piece.Type.Rook, 0x8000000000000000);
+            pieces = new Piece[32];
+            pieces[0] = new Rook(Piece.Colour.White, 1);
+            pieces[1] = new Knight(Piece.Colour.White, 2);
+            pieces[2] = new Bishop(Piece.Colour.White, 4);
+            pieces[3] = new Queen(Piece.Colour.White, 8);
+            pieces[4] = new King(Piece.Colour.White, 0x10);
+            pieces[5] = new Bishop(Piece.Colour.White, 0x20);
+            pieces[6] = new Knight(Piece.Colour.White, 0x40);
+            pieces[7] = new Rook(Piece.Colour.White, 0x80);
+            pieces[8] = new Pawn(Piece.Colour.White, 0x100);
+            pieces[9] = new Pawn(Piece.Colour.White, 0x200);
+            pieces[10] = new Pawn(Piece.Colour.White, 0x400);
+            pieces[11] = new Pawn(Piece.Colour.White, 0x800);
+            pieces[12] = new Pawn(Piece.Colour.White, 0x1000);
+            pieces[13] = new Pawn(Piece.Colour.White, 0x2000);
+            pieces[14] = new Pawn(Piece.Colour.White, 0x4000);
+            pieces[15] = new Pawn(Piece.Colour.White, 0x8000);
+            pieces[16] = new Pawn(Piece.Colour.Black, 0x1000000000000);
+            pieces[17] = new Pawn(Piece.Colour.Black, 0x2000000000000);
+            pieces[18] = new Pawn(Piece.Colour.Black, 0x4000000000000);
+            pieces[19] = new Pawn(Piece.Colour.Black, 0x8000000000000);
+            pieces[20] = new Pawn(Piece.Colour.Black, 0x10000000000000);
+            pieces[21] = new Pawn(Piece.Colour.Black, 0x20000000000000);
+            pieces[22] = new Pawn(Piece.Colour.Black, 0x40000000000000);
+            pieces[23] = new Pawn(Piece.Colour.Black, 0x80000000000000);
+            pieces[24] = new Rook(Piece.Colour.Black, 0x100000000000000);
+            pieces[25] = new Knight(Piece.Colour.Black, 0x200000000000000);
+            pieces[26] = new Bishop(Piece.Colour.Black, 0x400000000000000);
+            pieces[27] = new Queen(Piece.Colour.Black, 0x800000000000000);
+            pieces[28] = new King(Piece.Colour.Black, 0x1000000000000000);
+            pieces[29] = new Bishop(Piece.Colour.Black, 0x2000000000000000);
+            pieces[30] = new Knight(Piece.Colour.Black, 0x4000000000000000);
+            pieces[31] = new Rook(Piece.Colour.Black, 0x8000000000000000);
+            this.CalculateThreats(); // TODO Remove for performance
         }
 
         public Piece[][] GetLayout()
@@ -140,201 +205,288 @@ namespace Chess.Shared
             return occupiedSquares;
         }
 
-        public List<Move> GetLegalMovesForPiece(Piece piece)
+        public List<Move> GetLegalMovesForPiece<T>(T piece) where T : Piece
         {
             List<Move> moves = new() { };
+            if (piece.position.IsEqual(0)) return moves;
             if(this.currentTurn != piece.colour)
             {
                 return moves;
             }
-            BitBoard occupiedSquares = this.GetOccupiedSquares();
-            BitBoard friendlyPieces = this.GetOccupiedSquares(piece.colour);
-            BitBoard opponentPieces = new(occupiedSquares.board ^ friendlyPieces.board);
-            if (piece.type == Piece.Type.Pawn)
+            if (piece is King)
             {
-                int homeRankShiftValue = 8 + (int)piece.colour * (5 * 8);
-                BitBoard homeRank = new BitBoard(firstRank).GenShift(homeRankShiftValue);
-                BitBoard pushPawnSquare = new BitBoard(piece.position).GenShift(8 - ((int)piece.colour * 16)); // -8 for black and 8 for white.
-                if (!pushPawnSquare.IntersectsWith(occupiedSquares)) // Square is not occupied;
-                {
-                    moves.Add(new Move(piece, pushPawnSquare));
-
-                    if (homeRank.IntersectsWith(piece.position))
-                    {
-                        BitBoard pushTwiceSquare = new(pushPawnSquare);
-                        pushTwiceSquare.GenShift(8 - ((int)piece.colour * 16));
-                        if (!pushTwiceSquare.IntersectsWith(occupiedSquares))
-                        {
-                            moves.Add(new Move(piece, pushTwiceSquare));
-                        }
-                    }
-                }
-
-                BitBoard captureLeft = new BitBoard(piece.position).GenShift(7 - ((int)piece.colour * 16));
-                if (!piece.position.IntersectsWith(aFile) && opponentPieces.IntersectsWith(captureLeft))
-                {
-                    moves.Add(new Move(piece, captureLeft, true));
-                };
-                BitBoard captureRight = new BitBoard(piece.position).GenShift(9 - ((int)piece.colour * 16));
-                BitBoard hFile = new BitBoard(aFile).GenShift(7);
-                if (!piece.position.IntersectsWith(hFile) && opponentPieces.IntersectsWith(captureRight))
-                {
-                    moves.Add(new Move(piece, captureRight, true));
-                };
-
-                BitBoard enPassantRank = new BitBoard(0x000000FF00000000).GenShift(-8 * (int)piece.colour);
-                BitBoard opponentHomeRank = piece.colour == Piece.Colour.White 
-                    ? new BitBoard(firstRank).GenShift(48) : new BitBoard(firstRank).GenShift(8);
-                if (lastMove != null && lastMove.piece.type == Piece.Type.Pawn // Last move was a pawn move
-                    && piece.position.IntersectsWith(enPassantRank) // This piece is on the enpassant rank
-                    && lastMove.from.IntersectsWith(opponentHomeRank) // The pawn moved from its home square
-                    && lastMove.to.IntersectsWith(enPassantRank)) // The pawn moved 2 squares
-                {
-                    BitBoard enPassantTarget = new(piece.position);
-                    enPassantTarget.GenShift(-1);
-                    if(lastMove.to.IsEqual(enPassantTarget))
-                    {
-                        moves.Add(new Move(piece, captureLeft, new BitBoard(enPassantTarget)));
-                    }
-                    enPassantTarget.GenShift(1);
-                    enPassantTarget.GenShift(1);
-                    if (lastMove.to.IsEqual(enPassantTarget))
-                    {
-                        moves.Add(new Move(piece, captureRight, new BitBoard(enPassantTarget)));
-                    }
-
-                }
-
-                return moves;
-            }
-            if(piece.type == Piece.Type.Knight)
-            {
-                int[] pieceCoords = piece.GetCoordinates();
-                BitBoard legalMoves = new(knightMoveTemplate);
-                int verticalShiftCount = pieceCoords[1] - knightMoveTemplateRank;
-                int horizontalShiftCount = pieceCoords[0] - knightMoveTemplateFile;
-                for (int i = 0; i < Math.Abs(verticalShiftCount); i++)
-                {
-                    if (verticalShiftCount > 0) // Shift up
-                    {
-                        legalMoves.StepOne(8);
-                    }
-                    else // Shift down
-                    {
-                        legalMoves.StepOne(-8);
-                    }
-                }
-                for (int i = 0; i < Math.Abs(horizontalShiftCount); i++)
-                {
-                    if (horizontalShiftCount > 0) // Shift right
-                    {
-                        legalMoves.StepOne(1);
-                    }
-                    else // Shift left
-                    {
-                        legalMoves.StepOne(-1);
-                    }
-                }
-                legalMoves = new(legalMoves.board & ~friendlyPieces.board);
-                List<BitBoard> knightMoves = legalMoves.Enumerate();
-                for(int i = 0; i < knightMoves.Count; i++)
-                {
-                    moves.Add(new Move(piece, knightMoves[i], knightMoves[i].IntersectsWith(opponentPieces)));
-                }
-            }
-            if(piece.type == Piece.Type.Bishop)
-            {
-                BitBoard attacks = piece.position.RayAttack(9, occupiedSquares)
-                    .UnionWith(piece.position.RayAttack(7, occupiedSquares))
-                    .UnionWith(piece.position.RayAttack(-9, occupiedSquares))
-                    .UnionWith(piece.position.RayAttack(-7, occupiedSquares))
-                    .AndNot(friendlyPieces);
-                List<BitBoard> bishopMoves = attacks.Enumerate();
-                for(int i = 0;i < bishopMoves.Count; i++)
-                {
-                    moves.Add(new Move(piece, bishopMoves[i], bishopMoves[i].IntersectsWith(opponentPieces)));
-                }
-
-            }
-            if (piece.type == Piece.Type.Rook)
-            {
-                BitBoard attacks = piece.position.RayAttack(8, occupiedSquares)
-                    .UnionWith(piece.position.RayAttack(1, occupiedSquares))
-                    .UnionWith(piece.position.RayAttack(-8, occupiedSquares))
-                    .UnionWith(piece.position.RayAttack(-1, occupiedSquares))
-                    .AndNot(friendlyPieces);
-                List<BitBoard> rookMoves = attacks.Enumerate();
-                for (int i = 0; i < rookMoves.Count; i++)
-                {
-                    moves.Add(new Move(piece, rookMoves[i], rookMoves[i].IntersectsWith(opponentPieces)));
-                }
-
-            }
-            if (piece.type == Piece.Type.Queen)
-            {
-                BitBoard attacks = piece.position.RayAttack(8, occupiedSquares)
-                    .UnionWith(piece.position.RayAttack(1, occupiedSquares))
-                    .UnionWith(piece.position.RayAttack(-8, occupiedSquares))
-                    .UnionWith(piece.position.RayAttack(-1, occupiedSquares))
-                    .UnionWith(piece.position.RayAttack(9, occupiedSquares))
-                    .UnionWith(piece.position.RayAttack(7, occupiedSquares))
-                    .UnionWith(piece.position.RayAttack(-9, occupiedSquares))
-                    .UnionWith(piece.position.RayAttack(-7, occupiedSquares))
-                    .AndNot(friendlyPieces);
-                List<BitBoard> queenMoves = attacks.Enumerate();
-                for (int i = 0; i < queenMoves.Count; i++)
-                {
-                    moves.Add(new Move(piece, queenMoves[i], queenMoves[i].IntersectsWith(opponentPieces)));
-                }
-
-            }
-            if (piece.type == Piece.Type.King)
-            {
-                BitBoard attacks = new BitBoard(piece.position.board).StepOne(8)
-                    .UnionWith(new BitBoard(piece.position.board).StepOne(1))
-                    .UnionWith(new BitBoard(piece.position.board).StepOne(-8))
-                    .UnionWith(new BitBoard(piece.position.board).StepOne(-1))
-                    .UnionWith(new BitBoard(piece.position.board).StepOne(9))
-                    .UnionWith(new BitBoard(piece.position.board).StepOne(7))
-                    .UnionWith(new BitBoard(piece.position.board).StepOne(-9))
-                    .UnionWith(new BitBoard(piece.position.board).StepOne(-7))
-                    .AndNot(friendlyPieces);
+                BitBoard attacks = piece.GetAttackMap(this.occupiedSquares).AndNot(this.friendlyPieces);
+                attacks = attacks.AndNot(this.controlledSquares);
                 List<BitBoard> kingMoves = attacks.Enumerate();
                 for (int i = 0; i < kingMoves.Count; i++)
                 {
-                    moves.Add(new Move(piece, kingMoves[i], kingMoves[i].IntersectsWith(opponentPieces)));
+                    moves.Add(new Move(piece, kingMoves[i], kingMoves[i].IntersectsWith(this.opponentPieces)));
                 }
-
+                if (!this.check)
+                {
+                    if (piece.colour == Piece.Colour.White ? this.wCastleShort : this.bCastleShort)
+                    {
+                        BitBoard inBetween = new BitBoard(0x60).GenShift((int)piece.colour * 8 * 7);
+                        if (!inBetween.IntersectsWith(this.occupiedSquares) && !inBetween.IntersectsWith(this.controlledSquares))
+                        {
+                            Move castleShort = new(piece, new BitBoard(piece.position).GenShift(2));
+                            castleShort.castleDirection = Move.CastleDirection.Short;
+                            moves.Add(castleShort);
+                        }
+                    }
+                    if (piece.colour == Piece.Colour.White ? this.wCastleLong : this.bCastleLong)
+                    {
+                        BitBoard inBetween = new BitBoard(0xE).GenShift((int)piece.colour * 8 * 7);
+                        if (!inBetween.IntersectsWith(this.occupiedSquares) && !inBetween.IntersectsWith(this.controlledSquares))
+                        {
+                            Move castleLong = new(piece, new BitBoard(piece.position).GenShift(-2));
+                            castleLong.castleDirection = Move.CastleDirection.Long;
+                            moves.Add(castleLong);
+                        }
+                    }
+                }
+            } else
+            {
+                moves = piece.GetLegalMoves(this.occupiedSquares, this.opponentPieces, this.lastMove);
+            }
+            if(this.check || this.PieceIsPinned(piece))
+            {
+                List<Move> nonCheckMoves = new();
+                for(int i = 0; i < moves.Count; i++)
+                {
+                    try
+                    {
+                        if (!this.MoveResultsInCheck(moves[i]))
+                        {
+                            nonCheckMoves.Add(moves[i]);
+                        }
+                    } catch (PromotionTypeException e) {}
+                }
+                return nonCheckMoves;
             }
             return moves;
         }
+        public bool MoveResultsInCheck(Move move) {
+            Board result = this.MovePiece(move, true);
+            return result.check;
+        }
 
-        public Board MovePiece(Move move)
+        public bool PieceIsPinned(Piece piece)
         {
+            foreach(Threat pin in this.pins)
+            {
+                if (pin.attackMap.IntersectsWith(piece.position)) return true;
+            }
+            return false;
+        }
+        
+        public int? CheckResult()
+        {
+            List<Piece> friendlyPieces = this.GetFriendlyPieces();
+            foreach(Piece piece in friendlyPieces)
+            {
+                List<Move> moves = this.GetLegalMovesForPiece(piece);
+                if(moves.Count > 0)
+                {
+                    return null;
+                }
+            }
+            return this.check ? 1 : 0;
+        }
+
+        public void CalculateThreats()
+        {
+            Piece? king = this.GetKing();
+            this.controlledSquares = new(0);
+            this.occupiedSquares = this.GetOccupiedSquares();
+            this.friendlyPieces = this.GetOccupiedSquares(this.currentTurn);
+            this.opponentPieces = new BitBoard(this.occupiedSquares.board).AndNot(this.friendlyPieces);
+            this.checkingPieces = new();
+            this.pins = new();
+            List<Piece> opponentPieces = this.GetOpponentPieces();
+            foreach (Piece piece in opponentPieces)
+            {
+                if (!piece.position.IsEqual(0))
+                {
+                    BitBoard attacks = piece.GetAttackMap(this.occupiedSquares);
+                    this.controlledSquares = this.controlledSquares.UnionWith(attacks);
+                    if (king != null)
+                    {
+                        if (attacks.IntersectsWith(king.position))
+                        {
+                            this.check = true;
+                            this.checkingPieces.Add(new Threat(piece, attacks));
+                        }
+                        else if (piece.type == Piece.Type.Bishop || piece.type == Piece.Type.Rook || piece.type == Piece.Type.Queen)
+                        {
+                            BitBoard xRay = piece.GetXray(this.occupiedSquares);
+                            if (xRay.IntersectsWith(king.position))
+                            {
+                                this.pins.Add(new Threat(piece, xRay));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private Piece? GetKing()
+        {
+            foreach(Piece piece in this.pieces)
+            {
+                if(piece.colour == this.currentTurn && piece.type == Piece.Type.King)
+                {
+                    return piece;
+                }
+            }
+            return null;
+        }
+        private List<Piece> GetFriendlyPieces()
+        {
+            List<Piece> friendlyPieces = new List<Piece>();
+            foreach (Piece piece in this.pieces)
+            {
+                if (piece.colour == this.currentTurn && !piece.position.IsEqual(0))
+                {
+                    friendlyPieces.Add(piece);
+                }
+            }
+            return friendlyPieces;
+        }
+
+        private List<Piece> GetOpponentPieces()
+        {
+            List<Piece> opponentPieces = new List<Piece>();
+            foreach (Piece piece in this.pieces)
+            {
+                if (piece.colour != this.currentTurn && !piece.position.IsEqual(0))
+                {
+                    opponentPieces.Add(piece);
+                }
+            }
+            return opponentPieces;
+        }
+
+        public Board MovePiece(Move move, bool dryRun=false)
+        {
+            if (move.piece.position.IsEqual(0))
+            {
+                throw new Exception("Piece is not on the board");
+            }
+            if (move.piece.colour != this.currentTurn)
+            {
+                throw new Exception($"Not {move.piece.colour}'s Turn");
+            }
+            if (move.piece is Pawn)
+            {
+                BitBoard promotionRank = new BitBoard(firstRank).GenShift((7 - ((int)move.piece.colour * 7)) * 8); // 0 for black and 7 for white.
+                if (promotionRank.IntersectsWith(move.to))
+                {
+                    if (move.promoteTo is null)
+                    {
+                        throw new PromotionTypeException("Promotion Type Required");
+                    }
+                } else if(move.promoteTo is not null)
+                {
+                    throw new PromotionTypeException("Promotion Type Forbidden");
+                }
+            }
+            else if (move.promoteTo is not null)
+            {
+                throw new PromotionTypeException("Promotion Type Forbidden");
+            }
             for (int i = 0; i < this.pieces.Length; i++)
             {
                 if (move.piece == this.pieces[i])
                 {
-                    if (move.piece.colour != this.currentTurn)
+                    List<Move> legalMoves = new List<Move>();
+                    if (dryRun)
                     {
-                        throw new Exception($"Not {move.piece.colour}'s Turn");
-                    }
-                    List<Move> legalMoves = GetLegalMovesForPiece(move.piece);
+                        legalMoves.Add(move);
+                    } else
+                    {
+                        legalMoves = GetLegalMovesForPiece(move.piece);
+                    }   
                     for (int j = 0; j < legalMoves.Count; j++)
                     {
                         if (legalMoves[j].piece == move.piece && legalMoves[j].to.IsEqual(move.to))
                         {
-                            Board result = new(this.pieces, move);
-                            this.movePlayed = legalMoves[j];
-                            if (legalMoves[j].isCapture)
+                            Move movePlayed = legalMoves[j];
+                            this.movePlayed = movePlayed;
+                            Board result = new(this);
+                            if (movePlayed.isCapture)
                             {
-                                Piece? capturedPiece = move.victim != null ? result.GetPieceAtSquare(move.victim) : result.GetPieceAtSquare(move.to);
+                                Piece? capturedPiece = movePlayed.victim != null ? result.GetPieceAtSquare(movePlayed.victim) : result.GetPieceAtSquare(movePlayed.to);
                                 if (capturedPiece != null)
                                 {
                                     capturedPiece.position = new(0);
                                 }
                             }
-                            result.pieces[i].position = move.to;
+                            if (movePlayed.castleDirection != null)
+                            {
+                                Piece? castledRook = result.GetPieceAtSquare(new BitBoard(1)
+                                    .GenShift((int)movePlayed.castleDirection * 7)
+                                    .GenShift((int)movePlayed.piece.colour * 8*7));
+                                if(castledRook != null)
+                                {
+                                    castledRook.position = new BitBoard(8).GenShift((int)movePlayed.castleDirection * 2)
+                                        .GenShift((int)movePlayed.piece.colour * 8 * 7);
+                                }
+                            }
+                            if(movePlayed.piece.colour == Piece.Colour.White)
+                            {
+                                if(movePlayed.piece.type == Piece.Type.King)
+                                {
+                                    result.wCastleLong = false;
+                                    result.wCastleShort = false;
+                                }
+                                if(movePlayed.piece.type == Piece.Type.Rook)
+                                {
+                                    if (result.wCastleShort && movePlayed.piece.position.IntersectsWith(hFile))
+                                    {
+                                        result.wCastleShort = false;
+                                    }
+                                    if (result.wCastleLong && movePlayed.piece.position.IntersectsWith(aFile))
+                                    {
+                                        result.wCastleLong = false;
+                                    }
+                                }
+                            } else
+                            {
+                                if(movePlayed.piece.type == Piece.Type.King)
+                                {
+                                    result.bCastleLong = false;
+                                    result.bCastleShort = false;
+                                }
+                                if (movePlayed.piece.type == Piece.Type.Rook)
+                                {
+                                    if (result.wCastleShort && movePlayed.piece.position.IntersectsWith(hFile))
+                                    {
+                                        result.wCastleShort = false;
+                                    }
+                                    if (result.wCastleLong && movePlayed.piece.position.IntersectsWith(aFile))
+                                    {
+                                        result.wCastleLong = false;
+                                    }
+                                }
+                            }
+                            result.pieces[i].position = movePlayed.to;
+                            if(move.promoteTo != null)
+                            {
+                                Piece.Type promotionType = (Piece.Type)move.promoteTo;
+                                var newPiece = Piece.FromType(promotionType, result.pieces[i].colour, move.to);
+                                result.pieces[i] = newPiece;
+                            }
+
+                            if (dryRun) result.currentTurn = this.currentTurn;
+                            result.CalculateThreats();
+                            movePlayed.isCheck = result.check;
+                            if (dryRun) this.movePlayed = null;
+                            else
+                            {
+                                movePlayed.result = result.CheckResult();
+                                Console.WriteLine($"Move Result : {movePlayed.result}");
+                            }
                             return result;
                         }
                     }
@@ -342,6 +494,26 @@ namespace Chess.Shared
                 }
             }
             throw new Exception("Piece not from this Board");
+        }
+
+        public string GetMoveNotation()
+        {
+            if (this.movePlayed == null) return "...";
+            string[] destinationNotation = this.movePlayed.to.GetFileAndRank();
+            string[] sourceNotation = this.movePlayed.piece.position.GetFileAndRank();
+            // TODO Qualifier notation - find other Knight and differentiate either file or rank
+            string checkNotation = this.movePlayed.isCheck ? "+" : "";
+            if (this.movePlayed.result == 1) checkNotation = "#";
+            string captureNotation = "";
+            if (this.movePlayed.isCapture)
+            {
+                captureNotation = "x";
+                if (this.movePlayed.piece is Pawn)
+                {
+                    captureNotation = sourceNotation[0] + captureNotation;
+                }
+            }
+            return $"{this.movePlayed.piece.GetInitial()}{captureNotation}{destinationNotation[0]}{destinationNotation[1]}{checkNotation}";
         }
     }
 }

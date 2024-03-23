@@ -4,8 +4,9 @@
             --square-size: 75px;
         }
         .board {
-            width: calc(--sqare-size * 8);
-            height: calc(--sqare-size * 8);
+            position: relative;
+            width: calc(var(--square-size) * 8);
+            height: calc(var(--square-size) * 8);
         }
         .rank {
             display: flex;
@@ -42,22 +43,61 @@
             background-color: #0006;
             border-radius: 50%;
         }
+        .promotionMenu {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            list-style: none;
+            padding: 0;
+            background: white;
+            box-shadow: 1px 2px 4px 0px black;
+            margin-top: 10px;
+            z-index: 10;
+        }
+
+        .gameResultAlert {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            box-shadow: 1px 2px 4px 0px black;
+            padding: 50px;
+        }
+
+        .moveNumber {
+            font-weight: bold;
+        }
+
+        .moveNotation {
+            margin: 2px;
+            cursor: pointer;
+        }
+
+        .moveNotation:hover {
+            background: whitesmoke;
+        }
     </style>
 </HeadContent>
 <h3>ChessBoard <button @onclick="() => resetBoard()">Reset</button></h3>
 <div class="board">
-    @for(var rank = 7; rank>=0; rank--)
+
+    @for (var rank = 7; rank >= 0; rank--)
     {
         <div class="rank">
-            @for(var file = 0; file<8; file++)
+            @for (var file = 0; file < 8; file++)
             {
                 var thisFile = file;
                 var thisRank = rank;
                 var coords = $"{thisFile},{thisRank}";
                 <div class="file">
-                    @if (moves.ContainsKey($"{thisFile},{thisRank}"))
+                    @if (moves.ContainsKey(coords))
                     {
-                        <span class="move-indicator" @onclick="() => submitMove(moves[coords])"></span>
+                        var move = moves[coords];
+                        <span class="move-indicator" @onclick="() => submitMove(move)"></span>
+                        @if (promotionMenuSquare == coords) {
+                            <PromotionMenu Colour="board.currentTurn" OnSelectType="@((Piece.Type type) => submitMove(move.SelectPromotionType(type)))" />
+                        }
                     }
                     @if (layout != null && layout[thisFile][thisRank] != null)
                     {
@@ -67,22 +107,50 @@
             }
         </div>
     }
+    @if (message != null)
+    {
+        <div class="gameResultAlert">
+            @message <br/>
+            <button @onclick="() => message = null">Dismiss</button>
+            <button @onclick="() => resetBoard()">Reset</button>
+        </div>
+    }
+</div>
+<GameHistory History="history" OnSelectMove="SetCurrentBoard" />
+<div class="controls">
+    <button class="firstMoveButton" @onclick="() => ShowFirstBoard()">|&lt;</button>
+    <button class="previousMoveButton" @onclick="() => ShowPreviousBoard()">&lt;</button>
+    <button class="nextMoveButton" @onclick="() => ShowNextBoard()">&gt;</button>
+    <button class="lastMoveButton" @onclick="() => ShowLastBoard()">&gt;|</button>
 </div>
 
 @code {
-    public Board? board;
-    public Piece[][]? layout;
+    public int currentMoveIndex = 0;
+    public string? message = null;
+    public Board board = new Board();
+    public string? promotionMenuSquare;
+    public Piece[][] layout = {};
     public Dictionary<string,Move> moves = new Dictionary<string, Move>();
     public List<Board> history = new List<Board>();
     public string GetPieceImage(Piece? piece)
     {
         if (piece == null) return "";
-        return $"images/{piece.type.ToString()}{piece.colour.ToString()}.png";
+        return $"images/{piece.type}{piece.colour}.png";
+    }
+
+    private void ClearMoves()
+    {
+        moves = new Dictionary<string, Move>();
     }
     public void showMovesForPiece(int file, int rank)
     {
+        ClearMoves();
+        if(this.board != this.history[this.history.Count - 1])
+        {
+            return; // No moves for historical positions
+        }
+        this.promotionMenuSquare = null;
         Piece piece = this.layout[file][rank];
-        this.moves = new Dictionary<string, Move>();
         if (this.board == null || piece == null) return;
         List<Move> legalMoves = this.board.GetLegalMovesForPiece(piece);
         for(int i = 0; i < legalMoves.Count; i++)
@@ -94,28 +162,81 @@
     }
     public void submitMove(Move move)
     {
-        Board oldBoard = this.board;
-        this.moves = new Dictionary<string, Move>();
+        Board oldBoard = board;
         try
         {
-            this.board = this.board.MovePiece(move);
-            this.layout = this.board.GetLayout();
-            this.history.Add(this.board);
+            board = board.MovePiece(move, false);
+            ClearMoves();
+            layout = board.GetLayout();
+            history.Add(board);
+            currentMoveIndex = history.Count-1;
+            int? result = board.lastMove != null ? board.lastMove.result : null;
+            if (result == null) return;
+            if (result == 1)
+            {
+                Piece.Colour winner = board.currentTurn == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
+                message = $"{winner} wins by checkmate!";
+            } else if(result == 0)
+            {
+                message = "Stalemate!";
+            }
         } catch(Exception e)
         {
-            Console.WriteLine(e);
+            if(e.Message == "Promotion Type Required"){
+                // Show Promotion Menu
+                int[] coords = move.to.GetCoordinates();
+                promotionMenuSquare = $"{coords[0]},{coords[1]}";
+            } else {
+                Console.WriteLine(e);
+                ClearMoves();
+            }
         }
+
     }
     public void resetBoard ()
     {
         board = new();
         layout = board.GetLayout();
-        moves = new Dictionary<string, Move>();
+        ClearMoves();
         history = new List<Board>();
+        history.Add(board);
+        currentMoveIndex = 0;
+        message = null;
     }
     protected override void OnInitialized()
     {
-        board = new();
+        layout = board.GetLayout();
+        history.Add(board);
+        currentMoveIndex = 0;
+    }
+
+    public void ShowPreviousBoard()
+    {
+        if (currentMoveIndex == 0) return;
+        SetCurrentBoard(currentMoveIndex - 1);
+    }
+
+    public void ShowNextBoard()
+    {
+        if (currentMoveIndex == history.Count - 1) return;
+        SetCurrentBoard(currentMoveIndex + 1);
+    }
+
+    public void ShowFirstBoard()
+    {
+        SetCurrentBoard(0);
+    }
+
+    public void ShowLastBoard()
+    {
+        SetCurrentBoard(history.Count - 1);
+    }
+
+    public void SetCurrentBoard(int index)
+    {
+        ClearMoves();
+        currentMoveIndex = index;
+        board = history[currentMoveIndex];
         layout = board.GetLayout();
     }
 

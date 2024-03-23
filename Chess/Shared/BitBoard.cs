@@ -5,6 +5,7 @@ namespace Chess.Shared
     public class BitBoard
     {
         public ulong board;
+        private static string[] FileLetters = { "a", "b", "c", "d", "e", "f", "g", "h" };
         private const ulong notAFile = 0xfefefefefefefefe; // ~0x0101010101010101
         private const ulong notHFile = 0x7f7f7f7f7f7f7f7f; // ~0x8080808080808080
         public BitBoard(ulong board)
@@ -89,27 +90,59 @@ namespace Chess.Shared
             coordinates[1] = log / 8;
             return coordinates;
         }
+        public string[] GetFileAndRank()
+        {
+            int[] coordinates = this.GetCoordinates();
+            string[] notation = new string[2];
+            notation[0] = BitBoard.FileLetters[coordinates[0]];
+            notation[1] = (coordinates[1]+1).ToString();
+            return notation;
+        }
 
         public BitBoard RayAttack(int direction, BitBoard occupiedSquares)
         {
             ulong initialPosition = this.board;
-            Console.WriteLine($"Initial Position: {initialPosition:X}");
             BitBoard flood = new(0);
             BitBoard propagator = new(this.board);
             if (direction > 9 || direction < -9)
             {
                 throw new Exception("shift value out of range. Must be from -9 to 9 inclusive.");
             }
-            Console.WriteLine($"Direction: {direction}");
             for(int i = 0; i < 7; i++)
             {
-                Console.WriteLine($"Propagator: {propagator.board:X}");
                 flood.board |= propagator.board &~occupiedSquares.board;
                 propagator.StepOne(direction);
                 propagator.board = propagator.board & ~occupiedSquares.board;
             }
             flood.board |= initialPosition;
             flood.StepOne(direction);
+            return flood;
+        }
+
+        public BitBoard XRay(int direction, BitBoard occupiedSquares)
+        {
+            ulong initialPosition = this.board;
+            ulong intersectOccupied = 0;
+            BitBoard flood = new(0);
+            BitBoard propagator = new(this.board);
+            if (direction > 9 || direction < -9)
+            {
+                throw new Exception("shift value out of range. Must be from -9 to 9 inclusive.");
+            }
+            for (int i = 0; i < 7; i++)
+            {
+                flood.board |= propagator.board;
+                propagator.StepOne(direction);
+                if (intersectOccupied == 0)
+                {
+                    intersectOccupied = propagator.board & (occupiedSquares.board & ~initialPosition);
+                }
+                else if (propagator.IntersectsWith(occupiedSquares))
+                {
+                    flood.board |= propagator.board;
+                    break;
+                }
+            }
             return flood;
         }
 
