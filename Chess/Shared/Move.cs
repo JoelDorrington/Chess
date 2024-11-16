@@ -53,5 +53,24 @@
             newMove.result = this.result;
             return newMove;
         }
+
+        public string GetMoveNotation()
+        {
+            string[] destinationNotation = this.to.GetFileAndRank();
+            string[] sourceNotation = this.piece.position.GetFileAndRank();
+            // TODO Qualifier notation - find other Knight and differentiate either file or rank
+            string checkNotation = this.isCheck ? "+" : "";
+            if (this.result == 1) checkNotation = "#";
+            string captureNotation = "";
+            if (this.isCapture)
+            {
+                captureNotation = "x";
+                if (this.piece is Pawn)
+                {
+                    captureNotation = sourceNotation[0] + captureNotation;
+                }
+            }
+            return $"{this.piece.GetInitial()}{captureNotation}{destinationNotation[0]}{destinationNotation[1]}{checkNotation}";
+        }
     }
 }

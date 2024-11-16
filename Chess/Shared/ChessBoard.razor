@@ -132,6 +132,7 @@
     public Piece[][] layout = {};
     public Dictionary<string,Move> moves = new Dictionary<string, Move>();
     public List<Board> history = new List<Board>();
+    public Bot? bot = null;
     public string GetPieceImage(Piece? piece)
     {
         if (piece == null) return "";
@@ -162,7 +163,6 @@
     }
     public void submitMove(Move move)
     {
-        Board oldBoard = board;
         try
         {
             board = board.MovePiece(move, false);
@@ -171,7 +171,6 @@
             history.Add(board);
             currentMoveIndex = history.Count-1;
             int? result = board.lastMove != null ? board.lastMove.result : null;
-            if (result == null) return;
             if (result == 1)
             {
                 Piece.Colour winner = board.currentTurn == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
@@ -180,6 +179,14 @@
             {
                 message = "Stalemate!";
             }
+            
+            bot = new Bot(board);
+            if(board.currentTurn == bot.colour)
+            {
+                Console.WriteLine("Bot's Move");
+                submitMove(bot.FindMove());
+            }
+
         } catch(Exception e)
         {
             if(e.Message == "Promotion Type Required"){

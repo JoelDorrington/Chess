@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.IO.Pipelines;
+using System.Linq;
 
 namespace Chess.Shared
 {
@@ -48,13 +49,13 @@ namespace Chess.Shared
             this.currentTurn = Piece.Colour.White;
             this.ResetBoard();
         }
-        public Board(Piece[] pieces, Move lastMove)
+        public Board(Piece[] oldPieces, Move lastMove)
         {
             pieces = new Piece[32];
             this.lastMove = lastMove;
             Piece.Colour lastTurn = lastMove.piece.colour;
             this.currentTurn = lastTurn == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
-            Array.Copy(pieces, pieces, 32);
+            Array.Copy(oldPieces, pieces, 32);
             for (int i = 0; i < pieces.Length; i++)
             {
                 if (pieces[i] is Pawn) pieces[i] = new Pawn(pieces[i].colour, pieces[i].position.board);
@@ -64,7 +65,7 @@ namespace Chess.Shared
                 if (pieces[i] is Queen) pieces[i] = new Queen(pieces[i].colour, pieces[i].position.board);
                 if (pieces[i] is King) pieces[i] = new King(pieces[i].colour, pieces[i].position.board);
             }
-            this.CalculateThreats();
+            this.CalculateThreats(this.currentTurn);
         }
         public Board(Board previousPosition)
         {
@@ -90,7 +91,7 @@ namespace Chess.Shared
             this.wCastleLong = previousPosition.wCastleLong;
             this.bCastleShort = previousPosition.bCastleShort;
             this.bCastleLong = previousPosition.bCastleLong;
-            this.CalculateThreats();
+            this.CalculateThreats(this.currentTurn);
         }
 
         public static ulong a1h8Diagonal = 0x8040201008040201;
@@ -137,7 +138,7 @@ namespace Chess.Shared
             pieces[29] = new Bishop(Piece.Colour.Black, 0x2000000000000000);
             pieces[30] = new Knight(Piece.Colour.Black, 0x4000000000000000);
             pieces[31] = new Rook(Piece.Colour.Black, 0x8000000000000000);
-            this.CalculateThreats(); // TODO Remove for performance
+            this.CalculateThreats(this.currentTurn); // TODO Remove for performance
         }
 
         public Piece[][] GetLayout()
@@ -266,6 +267,31 @@ namespace Chess.Shared
             }
             return moves;
         }
+
+        public List<Move> GetAllLegalMoves()
+        {
+            List<Move> moves = new();
+            List<Piece> friendlyPieces = GetFriendlyPieces();
+            foreach(Piece piece in friendlyPieces)
+            {
+                moves.AddRange(GetLegalMovesForPiece(piece));
+            }
+            return moves;
+        }
+        public List<Move> GetOpponentsLegalMoves()
+        {
+            List<Move> moves = new();
+            List<Piece> opponentsPieces = GetOpponentPieces();
+            Piece.Colour originalColour = currentTurn;
+            currentTurn = originalColour == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
+            foreach (Piece piece in opponentsPieces)
+            {
+                moves.AddRange(GetLegalMovesForPiece(piece));
+            }
+            currentTurn = originalColour;
+            return moves;
+        }
+
         public bool MoveResultsInCheck(Move move) {
             Board result = this.MovePiece(move, true);
             return result.check;
@@ -291,19 +317,21 @@ namespace Chess.Shared
                     return null;
                 }
             }
-            return this.check ? 1 : 0;
+            int result = this.check ? 1 : 0;
+            if(this.lastMove != null) this.lastMove.result = result;
+            return result;
         }
 
-        public void CalculateThreats()
+        public void CalculateThreats(Piece.Colour? player)
         {
-            Piece? king = this.GetKing();
+            Piece? king = this.GetKing(player ?? currentTurn);
             this.controlledSquares = new(0);
             this.occupiedSquares = this.GetOccupiedSquares();
-            this.friendlyPieces = this.GetOccupiedSquares(this.currentTurn);
+            this.friendlyPieces = this.GetOccupiedSquares(player ?? currentTurn);
             this.opponentPieces = new BitBoard(this.occupiedSquares.board).AndNot(this.friendlyPieces);
             this.checkingPieces = new();
             this.pins = new();
-            List<Piece> opponentPieces = this.GetOpponentPieces();
+            List<Piece> opponentPieces = player == currentTurn ? this.GetOpponentPieces() : this.GetFriendlyPieces();
             foreach (Piece piece in opponentPieces)
             {
                 if (!piece.position.IsEqual(0))
@@ -330,23 +358,23 @@ namespace Chess.Shared
             }
         }
 
-        private Piece? GetKing()
+        private Piece? GetKing(Piece.Colour? player)
         {
-            foreach(Piece piece in this.pieces)
+            foreach(Piece piece in pieces)
             {
-                if(piece.colour == this.currentTurn && piece.type == Piece.Type.King)
+                if(piece.colour == (player ?? currentTurn) && piece.type == Piece.Type.King)
                 {
                     return piece;
                 }
             }
             return null;
         }
-        private List<Piece> GetFriendlyPieces()
+        public List<Piece> GetFriendlyPieces()
         {
             List<Piece> friendlyPieces = new List<Piece>();
-            foreach (Piece piece in this.pieces)
+            foreach (Piece piece in pieces)
             {
-                if (piece.colour == this.currentTurn && !piece.position.IsEqual(0))
+                if (piece.colour == currentTurn && !piece.position.IsEqual(0))
                 {
                     friendlyPieces.Add(piece);
                 }
@@ -478,9 +506,9 @@ namespace Chess.Shared
                                 result.pieces[i] = newPiece;
                             }
 
-                            if (dryRun) result.currentTurn = this.currentTurn;
-                            result.CalculateThreats();
+                            result.CalculateThreats(dryRun ? this.currentTurn : result.currentTurn);
                             movePlayed.isCheck = result.check;
+                            // Needs work - bot can't see checkmate
                             if (dryRun) this.movePlayed = null;
                             else
                             {
@@ -499,21 +527,7 @@ namespace Chess.Shared
         public string GetMoveNotation()
         {
             if (this.movePlayed == null) return "...";
-            string[] destinationNotation = this.movePlayed.to.GetFileAndRank();
-            string[] sourceNotation = this.movePlayed.piece.position.GetFileAndRank();
-            // TODO Qualifier notation - find other Knight and differentiate either file or rank
-            string checkNotation = this.movePlayed.isCheck ? "+" : "";
-            if (this.movePlayed.result == 1) checkNotation = "#";
-            string captureNotation = "";
-            if (this.movePlayed.isCapture)
-            {
-                captureNotation = "x";
-                if (this.movePlayed.piece is Pawn)
-                {
-                    captureNotation = sourceNotation[0] + captureNotation;
-                }
-            }
-            return $"{this.movePlayed.piece.GetInitial()}{captureNotation}{destinationNotation[0]}{destinationNotation[1]}{checkNotation}";
+            return this.movePlayed.GetMoveNotation();
         }
     }
 }
