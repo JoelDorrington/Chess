@@ -72,12 +72,15 @@ namespace Chess.Shared
         public List<BitBoard> Enumerate()
         {
             List<BitBoard> result = new List<BitBoard>();
+            ulong testBit = 1;
             for(int i = 0; i<64; i++)
             {
-                if(!this.IntersectionOf((ulong)Math.Pow(2, i)).IsEqual(0))
+
+                if(this.IntersectionOf(testBit).IsEqual(testBit))
                 {
-                    result.Add(new BitBoard((ulong)Math.Pow(2, i)));
+                    result.Add(new BitBoard(testBit));
                 }
+                testBit <<= 1;
             }
             return result;
         }
