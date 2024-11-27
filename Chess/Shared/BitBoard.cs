@@ -16,6 +16,17 @@ namespace Chess.Shared
         {
             this.board = board.board;
         }
+        public BitBoard(String notation)
+        {
+            int shift = 0;
+            int fileLetterIndex = Array.IndexOf(FileLetters, notation[0].ToString().ToLower());
+            if (fileLetterIndex < 0) throw new Exception("Invalid Square Notation: " + notation);
+            shift += fileLetterIndex;
+            int rowNumber = int.Parse(notation[1].ToString());
+            if (rowNumber < 1 || rowNumber > 8) throw new Exception("Invalid Square Notation: " + notation);
+            shift += (rowNumber - 1) * 8;
+            this.board = (ulong)1 << shift;
+        }
 
         public bool IsEqual(BitBoard other)
         {
@@ -45,11 +56,11 @@ namespace Chess.Shared
 
         public bool IntersectsWith(BitBoard other)
         {
-            return !this.IntersectionOf(other).IsEqual(0);
+            return (this.board & other.board) != 0;
         }
         public bool IntersectsWith(ulong other)
         {
-            return !this.IntersectionOf(other).IsEqual(0);
+            return (this.board & other) != 0;
         }
 
         public BitBoard GenShift(int shift)
@@ -71,18 +82,37 @@ namespace Chess.Shared
 
         public List<BitBoard> Enumerate()
         {
-            List<BitBoard> result = new List<BitBoard>();
-            ulong testBit = 1;
-            for(int i = 0; i<64; i++)
+            return Enumerate(0, 64);
+        }
+        private List<BitBoard> Enumerate(int offset, int width)
+        {
+            List<BitBoard> moves = new();
+            width /= 2;
+            ulong mask = Convert.ToUInt64(Math.Pow(2, width)-1);
+            mask <<= offset;
+            if((board & mask) != 0)
             {
-
-                if(this.IntersectionOf(testBit).IsEqual(testBit))
+                if(width == 1)
                 {
-                    result.Add(new BitBoard(testBit));
+                    moves.Add(new BitBoard(mask));
+                } else
+                {
+                    moves.AddRange(Enumerate(offset, width));
                 }
-                testBit <<= 1;
             }
-            return result;
+            mask <<= width;
+            if ((board & mask) != 0)
+            {
+                if (width == 1)
+                {
+                    moves.Add(new BitBoard(mask));
+                }
+                else
+                {
+                    moves.AddRange(Enumerate(offset+width, width));
+                }
+            }
+            return moves;
         }
 
         public int[] GetCoordinates()
@@ -121,6 +151,24 @@ namespace Chess.Shared
             flood.StepOne(direction);
             return flood;
         }
+        public IEnumerable<BitBoard> EnumeratedRayAttack(int direction, BitBoard occupiedSquares)
+        {
+            BitBoard propagator = new(this.board);
+            if (direction > 9 || direction < -9)
+            {
+                throw new Exception("shift value out of range. Must be from -9 to 9 inclusive.");
+            }
+            for (int i = 0; i < 7; i++)
+            {
+                propagator.StepOne(direction);
+                if (propagator.IsEqual(0)) break;
+                yield return new(propagator);
+                if ((propagator.board & occupiedSquares.board) != 0)
+                {
+                    break;
+                };
+            }
+        }
 
         public BitBoard XRay(int direction, BitBoard occupiedSquares)
         {
@@ -152,6 +200,27 @@ namespace Chess.Shared
         public BitBoard AndNot(BitBoard board)
         {
             return new(this.board & ~board.board);
+        }
+
+        public string GetPositionGrid()
+        {
+            string output = "";
+            string row = "";
+            for (int i = 63; i >= 0; i--)
+            {
+                if (i != 63 && (i + 1) % 8 == 0)
+                {
+                    output += row + "\r\n";
+                    row = "";
+                }
+                row = (((this.board >> i) & (uint)1) == 1 ? "x " : "- ") + row;
+            }
+            output += row + "\r\n";
+            return output;
+        }
+        public void LogPosition()
+        {
+            Console.WriteLine(GetPositionGrid());
         }
 
     }

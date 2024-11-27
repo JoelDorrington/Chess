@@ -80,6 +80,7 @@
     </style>
 </HeadContent>
 <h3>ChessBoard <button @onclick="() => resetBoard()">Reset</button></h3>
+<button @onclick="() => botActivated = !botActivated">@(botActivated ? "Deactivate Bot" : "Activate Bot")</button>
 <div class="board">
 
     @for (var rank = 7; rank >= 0; rank--)
@@ -116,7 +117,7 @@
         </div>
     }
 </div>
-<GameHistory History="history" OnSelectMove="SetCurrentBoard" />
+<GameHistory History="board.MoveHistory" OnSelectMove="SetCurrentBoard" />
 <div class="controls">
     <button class="firstMoveButton" @onclick="() => ShowFirstBoard()">|&lt;</button>
     <button class="previousMoveButton" @onclick="() => ShowPreviousBoard()">&lt;</button>
@@ -131,8 +132,8 @@
     public string? promotionMenuSquare;
     public Piece[][] layout = {};
     public Dictionary<string,Move> moves = new Dictionary<string, Move>();
-    public List<Board> history = new List<Board>();
     public Bot? bot = null;
+    public bool botActivated = false;
     public string GetPieceImage(Piece? piece)
     {
         if (piece == null) return "";
@@ -146,46 +147,40 @@
     public void showMovesForPiece(int file, int rank)
     {
         ClearMoves();
-        if(this.board != this.history[this.history.Count - 1])
-        {
-            return; // No moves for historical positions
-        }
         this.promotionMenuSquare = null;
         Piece piece = this.layout[file][rank];
         if (this.board == null || piece == null) return;
-        List<Move> legalMoves = this.board.GetLegalMovesForPiece(piece);
-        for(int i = 0; i < legalMoves.Count; i++)
-        {   
-            int[] coords = legalMoves[i].to.GetCoordinates();
-            this.moves[$"{coords[0]},{coords[1]}"] = legalMoves[i];
+        try
+        {
+            List<Move> legalMoves = this.board.GetLegalMovesForPiece(piece);
+            for (int i = 0; i < legalMoves.Count; i++)
+            {
+                int[] coords = legalMoves[i].to.GetCoordinates();
+                this.moves[$"{coords[0]},{coords[1]}"] = legalMoves[i];
+            }
+            List<string> keys = new List<string>(moves.Keys);
         }
-        List<string> keys = new List<string>(moves.Keys);
+        catch { }
     }
     public void submitMove(Move move)
     {
         try
         {
-            board = board.MovePiece(move, false);
+            board = board.MovePiece(move);
             ClearMoves();
             layout = board.GetLayout();
-            history.Add(board);
-            currentMoveIndex = history.Count-1;
-            int? result = board.lastMove != null ? board.lastMove.result : null;
-            if (result == 1)
+            currentMoveIndex = board.MoveHistory.Count-1;
+
+            if (board.LastMove != null && board.LastMove.isCheckMate)
             {
                 Piece.Colour winner = board.currentTurn == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
                 message = $"{winner} wins by checkmate!";
-            } else if(result == 0)
+            }
+            else if (board.LastMove != null && board.LastMove.isDraw)
             {
                 message = "Stalemate!";
             }
-            
-            bot = new Bot(board);
-            if(board.currentTurn == bot.colour)
-            {
-                Console.WriteLine("Bot's Move");
-                submitMove(bot.FindMove());
-            }
+
 
         } catch(Exception e)
         {
@@ -194,7 +189,7 @@
                 int[] coords = move.to.GetCoordinates();
                 promotionMenuSquare = $"{coords[0]},{coords[1]}";
             } else {
-                Console.WriteLine(e);
+                Console.Error.WriteLine(e);
                 ClearMoves();
             }
         }
@@ -202,19 +197,27 @@
     }
     public void resetBoard ()
     {
-        board = new();
+        board.ResetBoard();
         layout = board.GetLayout();
         ClearMoves();
-        history = new List<Board>();
-        history.Add(board);
         currentMoveIndex = 0;
         message = null;
     }
     protected override void OnInitialized()
     {
+        bot = new(board);
         layout = board.GetLayout();
-        history.Add(board);
         currentMoveIndex = 0;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (bot!=null && botActivated && !bot.thinking && board.currentTurn == bot?.colour)
+        {
+            submitMove(await bot.FindMoveAsync());
+            StateHasChanged();
+        }
     }
 
     public void ShowPreviousBoard()
@@ -225,7 +228,7 @@
 
     public void ShowNextBoard()
     {
-        if (currentMoveIndex == history.Count - 1) return;
+        if (currentMoveIndex == board.MoveHistory.Count - 1) return;
         SetCurrentBoard(currentMoveIndex + 1);
     }
 
@@ -236,14 +239,14 @@
 
     public void ShowLastBoard()
     {
-        SetCurrentBoard(history.Count - 1);
+        SetCurrentBoard(board.MoveHistory.Count - 1);
     }
 
     public void SetCurrentBoard(int index)
     {
         ClearMoves();
         currentMoveIndex = index;
-        board = history[currentMoveIndex];
+        //board.NavHistoryToIndex(currentMoveIndex); // TODO
         layout = board.GetLayout();
     }
 

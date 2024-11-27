@@ -5,8 +5,10 @@ namespace Chess.Shared
     public abstract class AbstractPiece
     {
         public abstract List<Move> GetLegalMoves(BitBoard occupiedSquares, BitBoard opponentPieces, Move? lastMove);
+        public abstract IEnumerable<Move> GenerateLegalMoves(BitBoard occupiedSquares, BitBoard opponentPieces, Move? lastMove);
 
         public abstract BitBoard GetAttackMap(BitBoard occupiedSquares);
+        public abstract IEnumerable<BitBoard> EnumerateAttackMap(BitBoard occupiedSquares);
 
         public abstract BitBoard GetXray(BitBoard occupiedSquares);
 
@@ -29,6 +31,7 @@ namespace Chess.Shared
         public Colour colour;
         public Type type;
         public BitBoard position;
+        public BitBoard attackMap = new(0);
 
         public Piece(Colour colour, Type type, ulong position)
         {
@@ -73,8 +76,16 @@ namespace Chess.Shared
         {
             throw new NotImplementedException();
         }
+        public override IEnumerable<Move> GenerateLegalMoves(BitBoard occupiedSquares, BitBoard opponentPieces, Move? lastMove)
+        {
+            throw new NotImplementedException();
+        }
 
         public override BitBoard GetAttackMap(BitBoard occupiedSquares)
+        {
+            throw new NotImplementedException();
+        }
+        public override IEnumerable<BitBoard> EnumerateAttackMap(BitBoard occupiedSquares)
         {
             throw new NotImplementedException();
         }
@@ -97,7 +108,7 @@ namespace Chess.Shared
         public override List<Move> GetLegalMoves(BitBoard occupiedSquares, BitBoard opponentPieces, Move? lastMove)
         {
             List<Move> moves = new();
-            int homeRankShiftValue = 8 + (int)this.colour * (5 * 8);
+            int homeRankShiftValue = 8 + (int)this.colour * 40;
             BitBoard homeRank = new BitBoard(Board.firstRank).GenShift(homeRankShiftValue);
             BitBoard pushPawnSquare = new BitBoard(this.position).GenShift(8 - ((int)this.colour * 16)); // -8 for black and 8 for white.
             if (!pushPawnSquare.IntersectsWith(occupiedSquares)) // Square is not occupied;
@@ -115,20 +126,23 @@ namespace Chess.Shared
                 }
             }
 
-            List<BitBoard> attacks = this.GetAttackMap(occupiedSquares).Enumerate();
-            foreach (BitBoard attack in attacks)
-            {
-                if (attack.IntersectsWith(opponentPieces))
-                {
-                    moves.Add(new Move(this, attack, true));
-                }
-            }
-
+            //List<BitBoard> attacks = EnumerateAttackMap(occupiedSquares); // Use this to refactor code below.
             BitBoard captureLeft = new BitBoard(this.position).GenShift(7 - ((int)this.colour * 16));
             BitBoard captureRight = new BitBoard(this.position).GenShift(9 - ((int)this.colour * 16));
+            if (!this.position.IntersectsWith(Board.aFile) && captureLeft.IntersectsWith(opponentPieces))
+            {
+                moves.Add(new Move(this, captureLeft, captureLeft));
+            };
+            BitBoard hFile = new BitBoard(Board.aFile).GenShift(7);
+            if (!this.position.IntersectsWith(hFile) && captureRight.IntersectsWith(opponentPieces))
+            {
+                moves.Add(new Move(this, captureRight, captureRight));
+            };
+
             BitBoard enPassantRank = new BitBoard(0x000000FF00000000).GenShift(-8 * (int)this.colour);
             BitBoard opponentHomeRank = this.colour == Colour.White
-                ? new BitBoard(Board.firstRank).GenShift(48) : new BitBoard(Board.firstRank).GenShift(8);
+                ? new BitBoard(Board.firstRank).GenShift(48)
+                : new BitBoard(Board.firstRank).GenShift(8);
             if (lastMove != null && lastMove.piece.type == Type.Pawn // Last move was a pawn move
             && this.position.IntersectsWith(enPassantRank) // This this is on the enpassant rank
                 && lastMove.from.IntersectsWith(opponentHomeRank) // The pawn moved from its home square
@@ -151,6 +165,62 @@ namespace Chess.Shared
 
             return moves;
         }
+        public override IEnumerable<Move> GenerateLegalMoves(BitBoard occupiedSquares, BitBoard opponentPieces, Move? lastMove)
+        {
+            int homeRankShiftValue = 8 + (int)this.colour * 40;
+            BitBoard homeRank = new BitBoard(Board.firstRank).GenShift(homeRankShiftValue);
+            BitBoard pushPawnSquare = new BitBoard(this.position).GenShift(8 - ((int)this.colour * 16)); // -8 for black and 8 for white.
+            if (!pushPawnSquare.IntersectsWith(occupiedSquares)) // Square is not occupied;
+            {
+                yield return new Move(this, pushPawnSquare);
+
+                if (homeRank.IntersectsWith(this.position))
+                {
+                    BitBoard pushTwiceSquare = new(pushPawnSquare);
+                    pushTwiceSquare.GenShift(8 - ((int)this.colour * 16));
+                    if (!pushTwiceSquare.IntersectsWith(occupiedSquares))
+                    {
+                        yield return new Move(this, pushTwiceSquare);
+                    }
+                }
+            }
+
+            BitBoard captureLeft = new BitBoard(this.position).GenShift(7 - ((int)this.colour * 16));
+            BitBoard captureRight = new BitBoard(this.position).GenShift(9 - ((int)this.colour * 16));
+            if (!this.position.IntersectsWith(Board.aFile) && captureLeft.IntersectsWith(opponentPieces))
+            {
+                 yield return new Move(this, captureLeft, captureLeft);
+            };
+            BitBoard hFile = new BitBoard(Board.aFile).GenShift(7);
+            if (!this.position.IntersectsWith(hFile) && captureRight.IntersectsWith(opponentPieces))
+            {
+                 yield return new Move(this, captureRight, captureRight);
+            };
+
+            BitBoard enPassantRank = new BitBoard(0x000000FF00000000).GenShift(-8 * (int)this.colour);
+            BitBoard opponentHomeRank = this.colour == Colour.White
+                ? new BitBoard(Board.firstRank).GenShift(48)
+                : new BitBoard(Board.firstRank).GenShift(8);
+            if (lastMove != null && lastMove.piece.type == Type.Pawn // Last move was a pawn move
+            && this.position.IntersectsWith(enPassantRank) // This this is on the enpassant rank
+                && lastMove.from.IntersectsWith(opponentHomeRank) // The pawn moved from its home square
+                && lastMove.to.IntersectsWith(enPassantRank)) // The pawn moved 2 squares
+            {
+                BitBoard enPassantTarget = new(this.position);
+                enPassantTarget.GenShift(-1);
+                if (lastMove.to.IsEqual(enPassantTarget))
+                {
+                    yield return new Move(this, captureLeft, new BitBoard(enPassantTarget));
+                }
+                enPassantTarget.GenShift(1);
+                enPassantTarget.GenShift(1);
+                if (lastMove.to.IsEqual(enPassantTarget))
+                {
+                    yield return new Move(this, captureRight, new BitBoard(enPassantTarget));
+                }
+
+            }
+        }
 
         public override BitBoard GetAttackMap(BitBoard occupiedSquares)
         {
@@ -167,6 +237,22 @@ namespace Chess.Shared
                 attackMap = attackMap.UnionWith(captureRight);
             };
             return attackMap;
+        }
+        public override IEnumerable<BitBoard> EnumerateAttackMap(BitBoard occupiedSquares)
+        {
+            // Faster than building map then enumerating which requires 64 shift operations
+            List<BitBoard> attacks = new(0);
+            BitBoard captureLeft = new BitBoard(this.position).GenShift(7 - ((int)this.colour * 16));
+            if (!this.position.IntersectsWith(Board.aFile))
+            {
+                yield return captureLeft;
+            };
+            BitBoard captureRight = new BitBoard(this.position).GenShift(9 - ((int)this.colour * 16));
+            BitBoard hFile = new BitBoard(Board.aFile).GenShift(7);
+            if (!this.position.IntersectsWith(hFile))
+            {
+                yield return captureRight;
+            };
         }
 
     }
@@ -188,9 +274,23 @@ namespace Chess.Shared
             List<BitBoard> knightMoves = attacks.Enumerate();
             for (int i = 0; i < knightMoves.Count; i++)
             {
-                moves.Add(new Move(this, knightMoves[i], knightMoves[i].IntersectsWith(opponentPieces)));
+                Move move = new Move(this, knightMoves[i]);
+                move.isCapture = knightMoves[i].IntersectsWith(opponentPieces);
+                moves.Add(move);
             }
             return moves;
+        }
+        public override IEnumerable<Move> GenerateLegalMoves(BitBoard occupiedSquares, BitBoard opponentPieces, Move? lastMove)
+        {
+            BitBoard friendlyPieces = new BitBoard(occupiedSquares).AndNot(opponentPieces);
+            BitBoard attacks = this.GetAttackMap(occupiedSquares).AndNot(friendlyPieces);
+            List<BitBoard> knightMoves = attacks.Enumerate();
+            for (int i = 0; i < knightMoves.Count; i++)
+            {
+                Move move = new Move(this, knightMoves[i]);
+                move.isCapture = knightMoves[i].IntersectsWith(opponentPieces);
+                yield return move;
+            }
         }
 
         public override BitBoard GetAttackMap(BitBoard occupiedSquares)
@@ -238,13 +338,25 @@ namespace Chess.Shared
         {
             List<Move> moves = new() { };
             BitBoard friendlyPieces = new BitBoard(occupiedSquares).AndNot(opponentPieces);
-            BitBoard attacks = this.GetAttackMap(occupiedSquares).AndNot(friendlyPieces);
-            List<BitBoard> bishopMoves = attacks.Enumerate();
-            for (int i = 0; i < bishopMoves.Count; i++)
+            foreach (BitBoard attack in EnumerateAttackMap(occupiedSquares))
             {
-                moves.Add(new Move(this, bishopMoves[i], bishopMoves[i].IntersectsWith(opponentPieces)));
+                if ((attack.board & friendlyPieces.board) != 0) continue;
+                Move move = new Move(this, attack);
+                move.isCapture = attack.IntersectsWith(opponentPieces);
+                moves.Add(move);
             }
             return moves;
+        }
+        public override IEnumerable<Move> GenerateLegalMoves(BitBoard occupiedSquares, BitBoard opponentPieces, Move? lastMove)
+        {
+            BitBoard friendlyPieces = new BitBoard(occupiedSquares.board & ~opponentPieces.board);
+            foreach (BitBoard attack in EnumerateAttackMap(occupiedSquares))
+            {
+                if ((attack.board & friendlyPieces.board) != 0) continue;
+                Move move = new Move(this, attack);
+                move.isCapture = attack.IntersectsWith(opponentPieces);
+                yield return move;
+            }
         }
 
         public override BitBoard GetAttackMap(BitBoard occupiedSquares)
@@ -253,6 +365,13 @@ namespace Chess.Shared
                 .UnionWith(this.position.RayAttack(7, occupiedSquares))
                 .UnionWith(this.position.RayAttack(-9, occupiedSquares))
                 .UnionWith(this.position.RayAttack(-7, occupiedSquares));
+        }
+        public override IEnumerable<BitBoard> EnumerateAttackMap(BitBoard occupiedSquares)
+        {
+            return position.EnumeratedRayAttack(9, occupiedSquares)
+                .Concat(position.EnumeratedRayAttack(7, occupiedSquares))
+                .Concat(position.EnumeratedRayAttack(-9, occupiedSquares))
+                .Concat(position.EnumeratedRayAttack(-7, occupiedSquares));
         }
 
         public override BitBoard GetXray(BitBoard occupiedSquares)
@@ -277,13 +396,25 @@ namespace Chess.Shared
         {
             List<Move> moves = new() { };
             BitBoard friendlyPieces = new BitBoard(occupiedSquares).AndNot(opponentPieces);
-            BitBoard attacks = this.GetAttackMap(occupiedSquares).AndNot(friendlyPieces);
-            List<BitBoard> rookMoves = attacks.Enumerate();
-            for (int i = 0; i < rookMoves.Count; i++)
+            foreach (BitBoard attack in EnumerateAttackMap(occupiedSquares))
             {
-                moves.Add(new Move(this, rookMoves[i], rookMoves[i].IntersectsWith(opponentPieces)));
+                if ((attack.board & friendlyPieces.board) != 0) continue;
+                Move move = new Move(this, attack);
+                move.isCapture = attack.IntersectsWith(opponentPieces);
+                moves.Add(move);
             }
             return moves;
+        }
+        public override IEnumerable<Move> GenerateLegalMoves(BitBoard occupiedSquares, BitBoard opponentPieces, Move? lastMove)
+        {
+            BitBoard friendlyPieces = new BitBoard(occupiedSquares.board & ~opponentPieces.board);
+            foreach (BitBoard attack in EnumerateAttackMap(occupiedSquares))
+            {
+                if ((attack.board & friendlyPieces.board) != 0) continue;
+                Move move = new Move(this, attack);
+                move.isCapture = attack.IntersectsWith(opponentPieces);
+                yield return move;
+            }
         }
 
         public override BitBoard GetAttackMap(BitBoard occupiedSquares)
@@ -292,6 +423,14 @@ namespace Chess.Shared
                 .UnionWith(this.position.RayAttack(1, occupiedSquares))
                 .UnionWith(this.position.RayAttack(-8, occupiedSquares))
                 .UnionWith(this.position.RayAttack(-1, occupiedSquares));
+        }
+
+        public override IEnumerable<BitBoard> EnumerateAttackMap(BitBoard occupiedSquares)
+        {
+            return this.position.EnumeratedRayAttack(8, occupiedSquares)
+                .Concat(position.EnumeratedRayAttack(1, occupiedSquares))
+                .Concat(position.EnumeratedRayAttack(-8, occupiedSquares))
+                .Concat(position.EnumeratedRayAttack(-1, occupiedSquares));
         }
 
         public override BitBoard GetXray(BitBoard occupiedSquares)
@@ -315,13 +454,25 @@ namespace Chess.Shared
         {
             List<Move> moves = new() { };
             BitBoard friendlyPieces = new BitBoard(occupiedSquares).AndNot(opponentPieces);
-            BitBoard attacks = this.GetAttackMap(occupiedSquares).AndNot(friendlyPieces);
-            List<BitBoard> queenMoves = attacks.Enumerate();
-            for (int i = 0; i < queenMoves.Count; i++)
+            foreach (BitBoard attack in EnumerateAttackMap(occupiedSquares))
             {
-                moves.Add(new Move(this, queenMoves[i], queenMoves[i].IntersectsWith(opponentPieces)));
+                if ((attack.board & friendlyPieces.board) != 0) continue;
+                Move move = new Move(this, attack);
+                move.isCapture = attack.IntersectsWith(opponentPieces);
+                moves.Add(move);
             }
             return moves;
+        }
+        public override IEnumerable<Move> GenerateLegalMoves(BitBoard occupiedSquares, BitBoard opponentPieces, Move? lastMove)
+        {
+            BitBoard friendlyPieces = new BitBoard(occupiedSquares.board & ~opponentPieces.board);
+            foreach (BitBoard attack in EnumerateAttackMap(occupiedSquares))
+            {
+                if ((attack.board & friendlyPieces.board) != 0) continue;
+                Move move = new Move(this, attack);
+                move.isCapture = attack.IntersectsWith(opponentPieces);
+                yield return move;
+            }
         }
 
         public override BitBoard GetAttackMap(BitBoard occupiedSquares)
@@ -334,6 +485,17 @@ namespace Chess.Shared
                 .UnionWith(this.position.RayAttack(7, occupiedSquares))
                 .UnionWith(this.position.RayAttack(-9, occupiedSquares))
                 .UnionWith(this.position.RayAttack(-7, occupiedSquares));
+        }
+        public override IEnumerable<BitBoard> EnumerateAttackMap(BitBoard occupiedSquares)
+        {
+            return this.position.EnumeratedRayAttack(8, occupiedSquares)
+                .Concat(this.position.EnumeratedRayAttack(1, occupiedSquares))
+                .Concat(this.position.EnumeratedRayAttack(-8, occupiedSquares))
+                .Concat(this.position.EnumeratedRayAttack(-1, occupiedSquares))
+                .Concat(this.position.EnumeratedRayAttack(9, occupiedSquares))
+                .Concat(this.position.EnumeratedRayAttack(7, occupiedSquares))
+                .Concat(this.position.EnumeratedRayAttack(-9, occupiedSquares))
+                .Concat(this.position.EnumeratedRayAttack(-7, occupiedSquares));
         }
         public override BitBoard GetXray(BitBoard occupiedSquares)
         {
@@ -367,6 +529,17 @@ namespace Chess.Shared
                 .UnionWith(new BitBoard(this.position.board).StepOne(7))
                 .UnionWith(new BitBoard(this.position.board).StepOne(-9))
                 .UnionWith(new BitBoard(this.position.board).StepOne(-7));
+        }
+        public override IEnumerable<BitBoard> EnumerateAttackMap(BitBoard occupiedSquares)
+        {
+            yield return new BitBoard(this.position.board).StepOne(8);
+            yield return new BitBoard(this.position.board).StepOne(1);
+            yield return new BitBoard(this.position.board).StepOne(-8);
+            yield return new BitBoard(this.position.board).StepOne(-1);
+            yield return new BitBoard(this.position.board).StepOne(9);
+            yield return new BitBoard(this.position.board).StepOne(7);
+            yield return new BitBoard(this.position.board).StepOne(-9);
+            yield return new BitBoard(this.position.board).StepOne(-7);
         }
     }
 }

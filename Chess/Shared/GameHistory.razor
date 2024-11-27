@@ -7,25 +7,22 @@
                     i / 2 + 1
                     ).
             </span>
-            if (History[i].movePlayed != null)
+            if (History[i] != null)
             {
+                Move move = History[i];
                 int currentIndex = i;
-                Board thisBoard = History[currentIndex];
                 <span class="moveNotation" @onclick="() => OnSelectMove.InvokeAsync(currentIndex+1)">
-                    @thisBoard.GetMoveNotation()@(thisBoard.movePlayed != null && thisBoard.movePlayed.result != null ? "" : ",")&nbsp;
+                    @move.GetMoveNotation()@(move.isCheckMate || move.isDraw ? "" : ",")&nbsp;
                 </span>
 
-                if (currentIndex + 1 < History.Count)
+                if (currentIndex +1 < History.Count)
                 {
-                    Board nextBoard = History[currentIndex + 1];
-                    if (nextBoard.movePlayed != null)
-                    {
-                        <span class="moveNotation" @onclick="() => OnSelectMove.InvokeAsync(currentIndex+2)">@nextBoard.GetMoveNotation()&nbsp;</span>
-                    }
-                    else if (nextBoard.lastMove == null || nextBoard.lastMove.result == null)
-                    {
-                        <span class="moveNotation">...</span>
-                    }
+                    Move nextMove= History[currentIndex + 1];
+                    <span class="moveNotation" @onclick="() => OnSelectMove.InvokeAsync(currentIndex+2)">@nextMove.GetMoveNotation()&nbsp;</span>
+                }
+                else if(!move.isCheckMate && !move.isDraw)
+                {
+                    <span class="moveNotation">...</span>
                 }
             }
             else
@@ -38,7 +35,7 @@
 
 @code {
     [Parameter]
-    public List<Board>? History { get; set; }
+    public List<Move>? History { get; set; }
 
     [Parameter]
     public EventCallback<int> OnSelectMove { get; set; }

@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-using System.IO.Pipelines;
-using System.Linq;
+﻿using static Chess.Shared.Piece;
 
 namespace Chess.Shared
 {
@@ -24,17 +22,27 @@ namespace Chess.Shared
         }
     }
     public class Board
-    {   
-        public static uint lastId = 0;
-        public string Id = (Board.lastId++).ToString();
+    {
         public Piece[] pieces;
-        public Piece.Colour currentTurn;
-        public Move? movePlayed = null;
-        public Move? lastMove = null;
-        public bool wCastleShort = true;
-        public bool wCastleLong = true;
-        public bool bCastleShort = true;
-        public bool bCastleLong = true;
+        public Piece.Colour currentTurn {
+            get
+            {
+                return MoveHistory.Count % 2 == 0 ? Piece.Colour.White : Piece.Colour.Black;
+            }
+        }
+        public Piece.Colour opponentColour
+        {
+            get
+            {
+                return MoveHistory.Count % 2 == 0 ? Piece.Colour.Black : Piece.Colour.White;
+            }
+        }
+        public List<Move> MoveHistory = new();
+        public uint bitmask = 0b1111;
+        //public bool wCastleShort = true; // now bitmap[0]
+        //public bool wCastleLong = true; // now bitmap[1]
+        //public bool bCastleShort = true; // now bitmap[2]
+        //public bool bCastleLong = true; // now bitmap[4]
         private BitBoard occupiedSquares = new(0);
         private BitBoard friendlyPieces = new(0);
         private BitBoard opponentPieces = new(0);
@@ -42,56 +50,12 @@ namespace Chess.Shared
         public bool check = false;
         private List<Threat> checkingPieces = new();
         private List<Threat> pins = new();
+        private List<King> kings = new();
 
         public Board()
         {
             this.pieces = new Piece[32];
-            this.currentTurn = Piece.Colour.White;
             this.ResetBoard();
-        }
-        public Board(Piece[] oldPieces, Move lastMove)
-        {
-            pieces = new Piece[32];
-            this.lastMove = lastMove;
-            Piece.Colour lastTurn = lastMove.piece.colour;
-            this.currentTurn = lastTurn == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
-            Array.Copy(oldPieces, pieces, 32);
-            for (int i = 0; i < pieces.Length; i++)
-            {
-                if (pieces[i] is Pawn) pieces[i] = new Pawn(pieces[i].colour, pieces[i].position.board);
-                if (pieces[i] is Knight) pieces[i] = new Knight(pieces[i].colour, pieces[i].position.board);
-                if (pieces[i] is Bishop) pieces[i] = new Bishop(pieces[i].colour, pieces[i].position.board);
-                if (pieces[i] is Rook) pieces[i] = new Rook(pieces[i].colour, pieces[i].position.board);
-                if (pieces[i] is Queen) pieces[i] = new Queen(pieces[i].colour, pieces[i].position.board);
-                if (pieces[i] is King) pieces[i] = new King(pieces[i].colour, pieces[i].position.board);
-            }
-            this.CalculateThreats(this.currentTurn);
-        }
-        public Board(Board previousPosition)
-        {
-            if (previousPosition.movePlayed == null)
-            {
-                throw new Exception("previousPosition.movePlayed must not be null");
-            }
-            pieces = new Piece[32];
-            Array.Copy(previousPosition.pieces, pieces, 32);
-            for (int i = 0; i < pieces.Length; i++)
-            {
-                if (pieces[i] is Pawn) pieces[i] = new Pawn(pieces[i].colour, pieces[i].position.board);
-                if (pieces[i] is Knight) pieces[i] = new Knight(pieces[i].colour, pieces[i].position.board);
-                if (pieces[i] is Bishop) pieces[i] = new Bishop(pieces[i].colour, pieces[i].position.board);
-                if (pieces[i] is Rook) pieces[i] = new Rook(pieces[i].colour, pieces[i].position.board);
-                if (pieces[i] is Queen) pieces[i] = new Queen(pieces[i].colour, pieces[i].position.board);
-                if (pieces[i] is King) pieces[i] = new King(pieces[i].colour, pieces[i].position.board);
-            }
-            this.lastMove = previousPosition.movePlayed;
-            Piece.Colour lastTurn = this.lastMove.piece.colour;
-            this.currentTurn = lastTurn == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
-            this.wCastleShort = previousPosition.wCastleShort;
-            this.wCastleLong = previousPosition.wCastleLong;
-            this.bCastleShort = previousPosition.bCastleShort;
-            this.bCastleLong = previousPosition.bCastleLong;
-            this.CalculateThreats(this.currentTurn);
         }
 
         public static ulong a1h8Diagonal = 0x8040201008040201;
@@ -105,6 +69,7 @@ namespace Chess.Shared
 
         public void ResetBoard()
         {
+            MoveHistory.Clear();
             pieces = new Piece[32];
             pieces[0] = new Rook(Piece.Colour.White, 1);
             pieces[1] = new Knight(Piece.Colour.White, 2);
@@ -138,7 +103,10 @@ namespace Chess.Shared
             pieces[29] = new Bishop(Piece.Colour.Black, 0x2000000000000000);
             pieces[30] = new Knight(Piece.Colour.Black, 0x4000000000000000);
             pieces[31] = new Rook(Piece.Colour.Black, 0x8000000000000000);
-            this.CalculateThreats(this.currentTurn); // TODO Remove for performance
+            this.kings = new() { (King)pieces[4], (King)pieces[28] };
+            this.bitmask = 0b1111;
+            SetOccupiedSquares();
+            CalculateThreats();
         }
 
         public Piece[][] GetLayout()
@@ -162,14 +130,7 @@ namespace Chess.Shared
 
         public Piece? GetPieceAtSquare(BitBoard squareSingleBitset)
         {
-            for (int i = 0; i < this.pieces.Length; i++)
-            {
-                if (this.pieces[i] != null && this.pieces[i].position.IsEqual(squareSingleBitset))
-                {
-                    return this.pieces[i];
-                }
-            }
-            return null;
+            return GetPieceAtSquare(squareSingleBitset.board);
         }
         public Piece? GetPieceAtSquare(ulong squareSingleBitset)
         {
@@ -181,6 +142,25 @@ namespace Chess.Shared
                 }
             }
             return null;
+        }
+        
+        public void SetOccupiedSquares()
+        {
+            occupiedSquares = new(0);
+            friendlyPieces = new(0);
+            opponentPieces = new(0);
+
+            foreach (Piece piece in pieces)
+            {
+                occupiedSquares.board |= piece.position.board;
+                if (piece.colour == currentTurn)
+                {
+                    friendlyPieces.board |= piece.position.board;
+                } else
+                {
+                    opponentPieces.board |= piece.position.board;
+                }
+            }
         }
 
         public BitBoard GetOccupiedSquares()
@@ -200,28 +180,61 @@ namespace Chess.Shared
             {
                 if (this.pieces[i].colour == colour)
                 {
-                    occupiedSquares = occupiedSquares.UnionWith(this.pieces[i].position);
+                    occupiedSquares.board |= this.pieces[i].position.board;
                 }
             }
             return occupiedSquares;
         }
 
+        private bool wCastleShort
+        {
+            get => (this.bitmask & 0b0001) != 0;
+            set => SetBitmask(value, 0b0001);
+        }
+        private bool wCastleLong
+        {
+            get => (this.bitmask & 0b0010) != 0;
+            set => SetBitmask(value, 0b0010);
+        }
+        private bool bCastleShort
+        {
+            get => (this.bitmask & 0b0100) != 0;
+            set => SetBitmask(value, 0b0100);
+        }
+        private bool bCastleLong
+        {
+            get => (this.bitmask & 0b1000) != 0;
+            set => SetBitmask(value, 0b1000);
+        }
+
+        public Move? LastMove {
+            get
+            {
+                if (this.MoveHistory.Count == 0) return null;
+                return this.MoveHistory.Last();
+            }
+            set
+            {
+                if (value == null) throw new Exception("Cannot set LastMove to null");
+                this.MoveHistory.Add(value);
+            }
+        }
+
         public List<Move> GetLegalMovesForPiece<T>(T piece) where T : Piece
         {
+            CalculateThreats();
             List<Move> moves = new() { };
-            if (piece.position.IsEqual(0)) return moves;
-            if(this.currentTurn != piece.colour)
-            {
-                return moves;
-            }
+            if (piece.position.IsEqual(0)) throw new Exception("Piece is captured");
+            if (this.currentTurn != piece.colour) throw new Exception($"Not {piece.colour}'s turn");
             if (piece is King)
             {
-                BitBoard attacks = piece.GetAttackMap(this.occupiedSquares).AndNot(this.friendlyPieces);
-                attacks = attacks.AndNot(this.controlledSquares);
-                List<BitBoard> kingMoves = attacks.Enumerate();
-                for (int i = 0; i < kingMoves.Count; i++)
+                foreach (BitBoard kingMove in piece.EnumerateAttackMap(this.occupiedSquares)
+                    .Where(x => !x.IsEqual(0)))
                 {
-                    moves.Add(new Move(piece, kingMoves[i], kingMoves[i].IntersectsWith(this.opponentPieces)));
+                    if (kingMove.IntersectsWith(this.friendlyPieces.board | this.controlledSquares.board)) continue;
+                    Move move = new(piece, kingMove);
+                    move.isCapture = kingMove.IntersectsWith(this.opponentPieces);
+                    moves.Add(move);
                 }
                 if (!this.check)
                 {
@@ -248,31 +261,92 @@ namespace Chess.Shared
                 }
             } else
             {
-                moves = piece.GetLegalMoves(this.occupiedSquares, this.opponentPieces, this.lastMove);
+                moves = piece.GetLegalMoves(this.occupiedSquares, this.opponentPieces, this.LastMove);
             }
-            if(this.check || this.PieceIsPinned(piece))
+            //Console.WriteLine($"GetLegalMovesForPiece {MoveHistory.Count}. {LastMove}"); // Check Depth
+            if (this.check || this.PieceIsPinned(piece))
             {
                 List<Move> nonCheckMoves = new();
-                for(int i = 0; i < moves.Count; i++)
+                for (int i = 0; i < moves.Count; i++)
                 {
                     try
                     {
-                        if (!this.MoveResultsInCheck(moves[i]))
+                        MovePiece(moves[i], true); // Will throw exception if in check
+                        UnMove();
+                        nonCheckMoves.Add(moves[i]);
+                    } catch (Exception e) {
+                        if (e.Message != "King has been left en prise")
                         {
-                            nonCheckMoves.Add(moves[i]);
+                            Console.Error.WriteLine($"{MoveHistory.Count}. {moves[i]}"); // TODO REMOVE
+                            Console.Error.WriteLine(e);
                         }
-                    } catch (PromotionTypeException e) {}
+                    }
                 }
                 return nonCheckMoves;
             }
             return moves;
         }
+        public IEnumerable<Move> GenerateLegalMovesForPiece<T>(T piece) where T : Piece
+        {
+            if (piece.position.IsEqual(0)) throw new Exception("Piece is captured");
+            if (this.currentTurn != piece.colour) throw new Exception($"Not {piece.colour}'s turn");
+            if (piece is King)
+            {
+                foreach (BitBoard kingMove in piece.EnumerateAttackMap(this.occupiedSquares))
+                {
+                    if (kingMove.IsEqual(0) || kingMove.IntersectsWith(this.friendlyPieces.board | this.controlledSquares.board)) continue;
+                    Move move = new(piece, kingMove);
+                    move.isCapture = kingMove.IntersectsWith(this.opponentPieces);
+                    yield return move;
+                }
+                if (!this.check)
+                {
+                    if (piece.colour == Piece.Colour.White ? this.wCastleShort : this.bCastleShort)
+                    {
+                        BitBoard inBetween = new BitBoard(0x60).GenShift((int)piece.colour * 8 * 7);
+                        if (!inBetween.IntersectsWith(this.occupiedSquares) && !inBetween.IntersectsWith(this.controlledSquares))
+                        {
+                            Move castleShort = new(piece, new BitBoard(piece.position).GenShift(2));
+                            castleShort.castleDirection = Move.CastleDirection.Short;
+                            yield return castleShort;
+                        }
+                    }
+                    if (piece.colour == Piece.Colour.White ? this.wCastleLong : this.bCastleLong)
+                    {
+                        BitBoard inBetween = new BitBoard(0xE).GenShift((int)piece.colour * 8 * 7);
+                        if (!inBetween.IntersectsWith(this.occupiedSquares) && !inBetween.IntersectsWith(this.controlledSquares))
+                        {
+                            Move castleLong = new(piece, new BitBoard(piece.position).GenShift(-2));
+                            castleLong.castleDirection = Move.CastleDirection.Long;
+                            yield return castleLong;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                foreach (Move move in piece.GenerateLegalMoves(this.occupiedSquares, this.opponentPieces, this.LastMove))
+                {
+                    yield return move;
+                }
+            }
+        }
+
+        public IEnumerable<Move> GenerateMoves()
+        {
+            foreach (Piece piece in GetFriendlyPieces())
+            {
+                foreach (Move move in GenerateLegalMovesForPiece(piece))
+                {
+                    yield return move;
+                }
+            }
+        }
 
         public List<Move> GetAllLegalMoves()
         {
             List<Move> moves = new();
-            List<Piece> friendlyPieces = GetFriendlyPieces();
-            foreach(Piece piece in friendlyPieces)
+            foreach (Piece piece in GetFriendlyPieces())
             {
                 moves.AddRange(GetLegalMovesForPiece(piece));
             }
@@ -281,118 +355,109 @@ namespace Chess.Shared
         public List<Move> GetOpponentsLegalMoves()
         {
             List<Move> moves = new();
-            List<Piece> opponentsPieces = GetOpponentPieces();
-            Piece.Colour originalColour = currentTurn;
-            currentTurn = originalColour == Piece.Colour.White ? Piece.Colour.Black : Piece.Colour.White;
-            foreach (Piece piece in opponentsPieces)
+            foreach (Piece piece in GetOpponentPieces())
             {
                 moves.AddRange(GetLegalMovesForPiece(piece));
             }
-            currentTurn = originalColour;
             return moves;
-        }
-
-        public bool MoveResultsInCheck(Move move) {
-            Board result = this.MovePiece(move, true);
-            return result.check;
         }
 
         public bool PieceIsPinned(Piece piece)
         {
-            foreach(Threat pin in this.pins)
+            foreach (Threat pin in this.pins)
             {
                 if (pin.attackMap.IntersectsWith(piece.position)) return true;
             }
             return false;
         }
-        
+
         public int? CheckResult()
         {
-            List<Piece> friendlyPieces = this.GetFriendlyPieces();
-            foreach(Piece piece in friendlyPieces)
+            foreach (Piece piece in GetFriendlyPieces())
             {
+                if (piece.position.IsEqual(0)) continue;
                 List<Move> moves = this.GetLegalMovesForPiece(piece);
-                if(moves.Count > 0)
+                if (moves.Count > 0)
                 {
                     return null;
                 }
             }
-            int result = this.check ? 1 : 0;
-            if(this.lastMove != null) this.lastMove.result = result;
-            return result;
+            return this.check ? 1 : 0;
         }
 
-        public void CalculateThreats(Piece.Colour? player)
+        public void Validate()
         {
-            Piece? king = this.GetKing(player ?? currentTurn);
-            this.controlledSquares = new(0);
-            this.occupiedSquares = this.GetOccupiedSquares();
-            this.friendlyPieces = this.GetOccupiedSquares(player ?? currentTurn);
-            this.opponentPieces = new BitBoard(this.occupiedSquares.board).AndNot(this.friendlyPieces);
-            this.checkingPieces = new();
-            this.pins = new();
-            List<Piece> opponentPieces = player == currentTurn ? this.GetOpponentPieces() : this.GetFriendlyPieces();
-            foreach (Piece piece in opponentPieces)
+            // Ensuring the current position is legal eg. opponent king must not be en prise
+            Piece? opponentKing = this.GetKing(opponentColour); // The king of the player who played LastMove;
+            foreach (Piece piece in GetFriendlyPieces())
             {
                 if (!piece.position.IsEqual(0))
                 {
                     BitBoard attacks = piece.GetAttackMap(this.occupiedSquares);
-                    this.controlledSquares = this.controlledSquares.UnionWith(attacks);
-                    if (king != null)
+                    if (opponentKing != null)
                     {
-                        if (attacks.IntersectsWith(king.position))
+                        if (attacks.IntersectsWith(opponentKing.position))
                         {
-                            this.check = true;
-                            this.checkingPieces.Add(new Threat(piece, attacks));
-                        }
-                        else if (piece.type == Piece.Type.Bishop || piece.type == Piece.Type.Rook || piece.type == Piece.Type.Queen)
-                        {
-                            BitBoard xRay = piece.GetXray(this.occupiedSquares);
-                            if (xRay.IntersectsWith(king.position))
-                            {
-                                this.pins.Add(new Threat(piece, xRay));
-                            }
+                            throw new Exception("King has been left en prise");
                         }
                     }
                 }
             }
         }
 
-        private Piece? GetKing(Piece.Colour? player)
+        public void CalculateThreats()
         {
-            foreach(Piece piece in pieces)
+            check = false;
+            Piece king = GetKing(currentTurn);
+            controlledSquares = new(0);
+            checkingPieces = new();
+            pins = new();
+            foreach (Piece piece in GetOpponentPieces())
             {
-                if(piece.colour == (player ?? currentTurn) && piece.type == Piece.Type.King)
+                if (piece.position.IsEqual(0)) continue;
+                BitBoard attacks = piece.GetAttackMap(occupiedSquares);
+                controlledSquares.board |= attacks.board;
+                if (king == null) continue;
+                if (attacks.IntersectsWith(king.position))
                 {
-                    return piece;
+                    check = true;
+                    checkingPieces.Add(new Threat(piece, attacks));
+                }
+                else if (piece.type == Piece.Type.Bishop || piece.type == Piece.Type.Rook || piece.type == Piece.Type.Queen)
+                {
+                    BitBoard xRay = piece.GetXray(occupiedSquares);
+                    if (xRay.IntersectsWith(king.position))
+                    {
+                        pins.Add(new Threat(piece, xRay));
+                    }
                 }
             }
-            return null;
         }
-        public List<Piece> GetFriendlyPieces()
+
+        private Piece GetKing(Colour? player)
         {
-            List<Piece> friendlyPieces = new List<Piece>();
+            return this.kings[(int)(player ?? this.currentTurn)];
+        }
+        public IEnumerable<Piece> GetFriendlyPieces()
+        {
             foreach (Piece piece in pieces)
             {
                 if (piece.colour == currentTurn && !piece.position.IsEqual(0))
                 {
-                    friendlyPieces.Add(piece);
+                    yield return piece;
                 }
             }
-            return friendlyPieces;
         }
 
-        private List<Piece> GetOpponentPieces()
+        private IEnumerable<Piece> GetOpponentPieces()
         {
-            List<Piece> opponentPieces = new List<Piece>();
             foreach (Piece piece in this.pieces)
             {
-                if (piece.colour != this.currentTurn && !piece.position.IsEqual(0))
+                if (piece.colour == opponentColour && !piece.position.IsEqual(0))
                 {
-                    opponentPieces.Add(piece);
+                    yield return piece;
                 }
             }
-            return opponentPieces;
         }
 
         public Board MovePiece(Move move, bool dryRun=false)
@@ -414,7 +479,7 @@ namespace Chess.Shared
                     {
                         throw new PromotionTypeException("Promotion Type Required");
                     }
-                } else if(move.promoteTo is not null)
+                } else if (move.promoteTo is not null)
                 {
                     throw new PromotionTypeException("Promotion Type Forbidden");
                 }
@@ -423,111 +488,147 @@ namespace Chess.Shared
             {
                 throw new PromotionTypeException("Promotion Type Forbidden");
             }
-            for (int i = 0; i < this.pieces.Length; i++)
+            move.bitmask &= (this.bitmask << 4) | 0b1111; // This.bitmask seems to always be 0
+            move.occupiedSquares = occupiedSquares;
+            move.friendlyPieces = friendlyPieces;
+            move.opponentPieces = opponentPieces;
+            this.LastMove = move;
+            if (move.isCapture)
             {
-                if (move.piece == this.pieces[i])
+                Piece? capturedPiece = move.captureSquare != null ? this.GetPieceAtSquare(move.captureSquare) : this.GetPieceAtSquare(move.to);
+                if (capturedPiece != null)
                 {
-                    List<Move> legalMoves = new List<Move>();
-                    if (dryRun)
-                    {
-                        legalMoves.Add(move);
-                    } else
-                    {
-                        legalMoves = GetLegalMovesForPiece(move.piece);
-                    }   
-                    for (int j = 0; j < legalMoves.Count; j++)
-                    {
-                        if (legalMoves[j].piece == move.piece && legalMoves[j].to.IsEqual(move.to))
-                        {
-                            Move movePlayed = legalMoves[j];
-                            this.movePlayed = movePlayed;
-                            Board result = new(this);
-                            if (movePlayed.isCapture)
-                            {
-                                Piece? capturedPiece = movePlayed.victim != null ? result.GetPieceAtSquare(movePlayed.victim) : result.GetPieceAtSquare(movePlayed.to);
-                                if (capturedPiece != null)
-                                {
-                                    capturedPiece.position = new(0);
-                                }
-                            }
-                            if (movePlayed.castleDirection != null)
-                            {
-                                Piece? castledRook = result.GetPieceAtSquare(new BitBoard(1)
-                                    .GenShift((int)movePlayed.castleDirection * 7)
-                                    .GenShift((int)movePlayed.piece.colour * 8*7));
-                                if(castledRook != null)
-                                {
-                                    castledRook.position = new BitBoard(8).GenShift((int)movePlayed.castleDirection * 2)
-                                        .GenShift((int)movePlayed.piece.colour * 8 * 7);
-                                }
-                            }
-                            if(movePlayed.piece.colour == Piece.Colour.White)
-                            {
-                                if(movePlayed.piece.type == Piece.Type.King)
-                                {
-                                    result.wCastleLong = false;
-                                    result.wCastleShort = false;
-                                }
-                                if(movePlayed.piece.type == Piece.Type.Rook)
-                                {
-                                    if (result.wCastleShort && movePlayed.piece.position.IntersectsWith(hFile))
-                                    {
-                                        result.wCastleShort = false;
-                                    }
-                                    if (result.wCastleLong && movePlayed.piece.position.IntersectsWith(aFile))
-                                    {
-                                        result.wCastleLong = false;
-                                    }
-                                }
-                            } else
-                            {
-                                if(movePlayed.piece.type == Piece.Type.King)
-                                {
-                                    result.bCastleLong = false;
-                                    result.bCastleShort = false;
-                                }
-                                if (movePlayed.piece.type == Piece.Type.Rook)
-                                {
-                                    if (result.wCastleShort && movePlayed.piece.position.IntersectsWith(hFile))
-                                    {
-                                        result.wCastleShort = false;
-                                    }
-                                    if (result.wCastleLong && movePlayed.piece.position.IntersectsWith(aFile))
-                                    {
-                                        result.wCastleLong = false;
-                                    }
-                                }
-                            }
-                            result.pieces[i].position = movePlayed.to;
-                            if(move.promoteTo != null)
-                            {
-                                Piece.Type promotionType = (Piece.Type)move.promoteTo;
-                                var newPiece = Piece.FromType(promotionType, result.pieces[i].colour, move.to);
-                                result.pieces[i] = newPiece;
-                            }
-
-                            result.CalculateThreats(dryRun ? this.currentTurn : result.currentTurn);
-                            movePlayed.isCheck = result.check;
-                            // Needs work - bot can't see checkmate
-                            if (dryRun) this.movePlayed = null;
-                            else
-                            {
-                                movePlayed.result = result.CheckResult();
-                                Console.WriteLine($"Move Result : {movePlayed.result}");
-                            }
-                            return result;
-                        }
-                    }
-                    throw new IllegalMoveException();
+                    move.capturedPiece = capturedPiece;
+                    capturedPiece.position = new(0);
                 }
             }
-            throw new Exception("Piece not from this Board");
+            if (move.castleDirection != null)
+            {
+                Piece? castledRook = this.GetPieceAtSquare(new BitBoard(1)
+                    .GenShift((int)move.castleDirection * 7)
+                    .GenShift((int)move.piece.colour * 8 * 7));
+                if (castledRook != null)
+                {
+                    move.castledRook = castledRook;
+                    castledRook.position = new BitBoard(8).GenShift((int)move.castleDirection * 2)
+                        .GenShift((int)move.piece.colour * 8 * 7);
+                }
+            }
+            UpdateCastlingBitmask(move);
+            move.piece.position = move.to;
+            if (move.promoteTo != null)
+            {
+                Piece.Type promotionType = (Piece.Type)move.promoteTo;
+                move.piece.type = promotionType;
+            }
+
+            try
+            {
+                SetOccupiedSquares();
+                Validate();
+                if (!dryRun)
+                {
+                    CalculateThreats();
+                    move.isCheck = check;
+                    int? result = CheckResult();
+                    if (result == 0) move.isDraw = true;
+                    else if (result == 1) move.isCheckMate = true;
+                }
+            }
+            catch (Exception e)
+            {
+                this.UnMove();
+                throw e;
+            }
+
+            return this;
+        }
+
+        private void SetBitmask(bool value, uint mask)
+        {
+            if (value)
+            {
+                this.bitmask |= mask;
+            }
+            else
+            {
+                this.bitmask &= ~mask;
+            }
+        }
+
+        void UpdateCastlingBitmask(Move move)
+        {
+
+            if (move.piece.colour == Piece.Colour.White)
+            {
+                if (move.piece.type == Piece.Type.King)
+                {
+                    this.wCastleLong = false;
+                    this.wCastleShort = false;
+                }
+                if (move.piece.type == Piece.Type.Rook)
+                {
+                    if (this.wCastleShort && move.piece.position.IntersectsWith(hFile))
+                    {
+                        this.wCastleShort = false;
+                    }
+                    if (this.wCastleLong && move.piece.position.IntersectsWith(aFile))
+                    {
+                        this.wCastleLong = false;
+                    }
+                }
+            }
+            else
+            {
+                if (move.piece.type == Piece.Type.King)
+                {
+                    this.bCastleLong = false;
+                    this.bCastleShort = false;
+                }
+                if (move.piece.type == Piece.Type.Rook)
+                {
+                    if (this.bCastleShort && move.piece.position.IntersectsWith(hFile))
+                    {
+                        this.bCastleShort = false;
+                    }
+                    if (this.bCastleLong && move.piece.position.IntersectsWith(aFile))
+                    {
+                        this.bCastleLong = false;
+                    }
+                }
+            }
+        }
+
+        public void UnMove()
+        {
+            Move? move = LastMove;
+            if (move == null) throw new Exception("No moves to undo");
+            if (move.promoteTo != null)
+            {
+                move.piece.type = Piece.Type.Pawn;
+            }
+            move.piece.position = move.from;
+            if (move.capturedPiece != null)
+            {
+                move.capturedPiece.position = move.captureSquare ?? move.to;
+            }
+            if(move.castleDirection != null && move.castledRook != null)
+            {
+                move.castledRook.position = new BitBoard(1)
+                    .GenShift((int)move.castleDirection * 7)
+                    .GenShift((int)move.piece.colour * 8 * 7);
+            }
+            bitmask = move.bitmask >> 4;
+            occupiedSquares = move.occupiedSquares ?? new(0);
+            friendlyPieces = move.friendlyPieces ?? new(0);
+            opponentPieces = move.opponentPieces ?? new(0);
+            MoveHistory.Remove(move);
         }
 
         public string GetMoveNotation()
         {
-            if (this.movePlayed == null) return "...";
-            return this.movePlayed.GetMoveNotation();
+            if (this.LastMove == null) return "...";
+            return this.LastMove.GetMoveNotation();
         }
     }
 }
