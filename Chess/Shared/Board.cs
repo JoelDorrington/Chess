@@ -462,6 +462,8 @@ namespace Chess.Shared
 
         public Board MovePiece(Move move, bool dryRun=false)
         {
+            // Dry run mode is for validation only. Prevents infinite loop:
+            // MovePiece -> CheckResult -> GetLegalMovesForPiece -> MovePiece -> ...
             if (move.piece.position.IsEqual(0))
             {
                 throw new Exception("Piece is not on the board");

@@ -383,7 +383,7 @@ namespace ChessTest
 
         // 1. e4,  Nf6 2. Nc3,  e5 3. Bc4,  Bb4 4. d3,  Kg8 5. Nf3,  d6 6. Kg1,  Bg4 7. h3,  Bxf3 8. Qxf3,  d5 9. Nxd5,  Nxd5 10. Bxd5,  c6 11. Bb3,  Qd4 12. c3,  Qc5 13. axb4,  Qxb4 14. Qg3,  Nd7 15. Bh6,  g6 16. h4,  Re8 17. h5,  Re7 18. axg6,  gxg6 19. f4,  Qb6+ 20. Kh2,  Kh8 
         [TestMethod]
-        public void ReproduceInfiniteLoop()
+        public void ReproduceStackOverflow()
         {
             Board board = new();
             board.MovePiece(new(board.GetPieceAtSquare(new BitBoard("e2")), new("e4")));

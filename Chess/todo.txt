@@ -1,0 +1,10 @@
+- Fix notation for castling moves and file letter bug
+- Promotions for bot
+- Draw by repetition and 50 move rule
+- Move navigation. Takebacks?
+- Implement opening table
+- Implement end game table
+- drag and drop moves
+- Flip board / Change colour
+- Deploy
+- Improve evaluation -- Neural net?
